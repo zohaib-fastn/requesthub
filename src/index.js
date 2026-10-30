@@ -17,6 +17,18 @@ const TENANT_ORG_IDS = {
   "acme-saas": "b14dc996-d036-4797-8908-adbc63f15b77",
 };
 
+// One widget per connector (the platform caps widgets at 2 connectors each -
+// see B04). Each tool gets its own real "Connect" action via a setup link,
+// since initiating a brand-new OAuth grant from inside the embedded iframe
+// has no reliable way back to the page once Slack's own OAuth severs
+// window.opener (see B05) - the setup link is a plain top-level page with no
+// popup/opener handshake to break.
+const CONNECT_WIDGETS = [
+  { slug: "slack", name: "Slack", widgetId: "wgt_de3a3eecea2f", color: "#4A154B" },
+  { slug: "linear", name: "Linear", widgetId: "wgt_6d4c5ff802f4", color: "#5E6AD2" },
+  { slug: "notion", name: "Notion", widgetId: "wgt_c14882ee7ab3", color: "#000000" },
+];
+
 function html(body) {
   return new Response(body, {
     headers: { "content-type": "text/html; charset=utf-8" },
@@ -80,7 +92,42 @@ async function mintEmbedToken(env, endOrgId, customerSlug) {
   return body?.data?.token;
 }
 
-function connectPage(customerSlug, endOrgId, token) {
+async function createSetupLink(env, widgetId, endOrgId, label) {
+  const res = await fetch(`${FASTN_BASE}/api/v1/setup-links`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.FASTN_API_KEY}`,
+      "X-fastn-Test-Mode": "true",
+      "x-fastn-env": "test",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ widgetId, endOrgId, label }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error || `setup link creation failed: ${res.status}`);
+  }
+  return body?.data?.setupUrl;
+}
+
+function connectPage(customerSlug, endOrgId, token, setupLinks) {
+  const cards = CONNECT_WIDGETS.map(function (w) {
+    const link = setupLinks[w.slug];
+    const initial = w.name.charAt(0);
+    return `<div class="tool-card">
+      <div class="tool-icon" style="background:${w.color}">${initial}</div>
+      <div class="tool-info">
+        <div class="tool-name">${w.name}</div>
+        <div class="tool-sub">Connect your own ${w.name} workspace</div>
+      </div>
+      ${
+        link
+          ? `<a class="btn-connect" href="${link}" target="_blank" rel="noopener">Connect &#8599;</a>`
+          : `<span class="btn-connect disabled">Unavailable</span>`
+      }
+    </div>`;
+  }).join("");
+
   return `<!doctype html>
 <html>
 <head>
@@ -97,8 +144,31 @@ function connectPage(customerSlug, endOrgId, token) {
     .hero { margin-bottom: 20px; }
     .hero h1 { font-size: 19px; margin: 0 0 4px; }
     .hero p { margin: 0; color: #9492a3; font-size: 13.5px; }
-    .frame-wrap { border: 1px solid #2a2935; border-radius: 14px; overflow: hidden; min-height: 600px; background: #16151d; }
-    .frame-wrap iframe { display: block; width: 100%; height: 600px; border: none; }
+
+    .tool-card {
+      display: flex; align-items: center; gap: 14px; background: #16151d; border: 1px solid #2a2935;
+      border-radius: 12px; padding: 14px 16px; margin-bottom: 10px;
+    }
+    .tool-icon {
+      width: 36px; height: 36px; border-radius: 9px; color: #fff; font-weight: 700; font-size: 15px;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .tool-info { flex: 1; min-width: 0; }
+    .tool-name { font-weight: 600; font-size: 14px; }
+    .tool-sub { color: #9492a3; font-size: 12.5px; margin-top: 2px; }
+    .btn-connect {
+      flex-shrink: 0; background: #6d5ef8; color: #fff; text-decoration: none; font-size: 13px;
+      font-weight: 600; padding: 8px 14px; border-radius: 8px;
+    }
+    .btn-connect:hover { background: #5b4de3; }
+    .btn-connect.disabled { background: #2a2935; color: #65636f; cursor: default; }
+
+    .section-label {
+      font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+      color: #65636f; margin: 28px 0 10px;
+    }
+    .frame-wrap { border: 1px solid #2a2935; border-radius: 14px; overflow: hidden; min-height: 500px; background: #16151d; }
+    .frame-wrap iframe { display: block; width: 100%; height: 500px; border: none; }
   </style>
 </head>
 <body>
@@ -112,6 +182,10 @@ function connectPage(customerSlug, endOrgId, token) {
       <h1>Connect your tools</h1>
       <p>Connect your own Slack, Linear, and Notion so submissions, status updates, and your changelog flow into your own workspace - without leaving RequestHub.</p>
     </div>
+
+    ${cards}
+
+    <div class="section-label">Connection status</div>
     <div class="frame-wrap">
       <iframe src="${FASTN_BASE}/api/v1/embed/iframe?token=${encodeURIComponent(token)}&org-id=${encodeURIComponent(endOrgId)}&theme=dark" allow="clipboard-write"></iframe>
     </div>
@@ -677,7 +751,17 @@ export default {
       }
       try {
         const token = await mintEmbedToken(env, endOrgId, customerSlug);
-        return html(connectPage(customerSlug, endOrgId, token));
+        const linkResults = await Promise.allSettled(
+          CONNECT_WIDGETS.map(function (w) {
+            return createSetupLink(env, w.widgetId, endOrgId, `${customerSlug} - Connect ${w.name}`);
+          })
+        );
+        const setupLinks = {};
+        CONNECT_WIDGETS.forEach(function (w, i) {
+          const r = linkResults[i];
+          setupLinks[w.slug] = r.status === "fulfilled" ? r.value : null;
+        });
+        return html(connectPage(customerSlug, endOrgId, token, setupLinks));
       } catch (err) {
         return html(connectUnavailablePage(customerSlug));
       }
