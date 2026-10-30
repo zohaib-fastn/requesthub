@@ -2,6 +2,8 @@ const SUBMIT_WORKFLOW_ID = "wf_3316b2d12e5f";
 const LIST_WORKFLOW_ID = "wf_a825a0c0f5bd";
 const UPDATE_STATUS_WORKFLOW_ID = "wf_b5b1e6e18d9b";
 const VOTE_WORKFLOW_ID = "wf_af7b6c5033db";
+const ADD_COMMENT_WORKFLOW_ID = "wf_fc41a427478e";
+const LIST_COMMENTS_WORKFLOW_ID = "wf_115e3671bb89";
 const FASTN_BASE = "https://api.fastn.dev";
 const STATUSES = ["under_review", "planned", "in_progress", "shipped"];
 
@@ -79,6 +81,15 @@ function boardPage(customerSlug) {
     .vote-btn.voted { background: #eef2ff; border-color: #3730a3; color: #3730a3; cursor: default; }
     .vote-btn .count { font-size: 15px; font-weight: 700; }
     .idea-body { flex: 1; min-width: 0; }
+    .comments-toggle { background: none; border: none; color: #3730a3; font-size: 12px; cursor: pointer; padding: 0; margin-top: 8px; width: auto; }
+    .comments-toggle:hover { text-decoration: underline; }
+    .comments { display: none; margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px; }
+    .comments.open { display: block; }
+    .comment { font-size: 13px; margin-bottom: 8px; }
+    .comment-author { font-weight: 600; }
+    .comment-form { display: flex; gap: 6px; margin-top: 8px; }
+    .comment-form input { flex: 1; margin: 0; padding: 6px 8px; font-size: 13px; }
+    .comment-form button { margin: 0; padding: 6px 12px; font-size: 13px; }
   </style>
 </head>
 <body>
@@ -131,6 +142,15 @@ function boardPage(customerSlug) {
           '<div class="meta"><span class="tag ' + i.category + '">' + i.category + '</span>' +
           '<select class="status-select" data-idea-id="' + i.id + '">' + options + '</select>' +
           '</div>' +
+          '<button class="comments-toggle" data-idea-id="' + i.id + '">Comments</button>' +
+          '<div class="comments" id="comments-' + i.id + '">' +
+          '<div class="comments-list"></div>' +
+          '<form class="comment-form" data-idea-id="' + i.id + '">' +
+          '<input class="comment-name" placeholder="Your name" maxlength="80" />' +
+          '<input class="comment-body" placeholder="Add a comment..." maxlength="2000" required />' +
+          '<button type="submit">Post</button>' +
+          '</form>' +
+          '</div>' +
           '</div>' +
           '</div>' +
           '</div>';
@@ -160,6 +180,54 @@ function boardPage(customerSlug) {
             });
         });
       });
+
+      list.querySelectorAll('.comments-toggle').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          const ideaId = btn.getAttribute('data-idea-id');
+          const panel = document.getElementById('comments-' + ideaId);
+          const isOpen = panel.classList.toggle('open');
+          if (isOpen) loadComments(ideaId);
+        });
+      });
+
+      list.querySelectorAll('.comment-form').forEach(function (form) {
+        form.addEventListener('submit', function (e) {
+          e.preventDefault();
+          const ideaId = form.getAttribute('data-idea-id');
+          const nameInput = form.querySelector('.comment-name');
+          const bodyInput = form.querySelector('.comment-body');
+          const body = bodyInput.value.trim();
+          if (!body) return;
+          fetch('/api/ideas/' + ideaId + '/comments', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ authorName: nameInput.value.trim() || 'Anonymous', body }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function () {
+              bodyInput.value = '';
+              loadComments(ideaId);
+            });
+        });
+      });
+    }
+
+    function loadComments(ideaId) {
+      const panel = document.getElementById('comments-' + ideaId);
+      const listEl = panel.querySelector('.comments-list');
+      listEl.innerHTML = '<div class="empty">Loading...</div>';
+      fetch('/api/ideas/' + ideaId + '/comments')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          const comments = d.comments || [];
+          if (!comments.length) {
+            listEl.innerHTML = '<div class="empty">No comments yet.</div>';
+            return;
+          }
+          listEl.innerHTML = comments.map(function (c) {
+            return '<div class="comment"><span class="comment-author">' + escapeHtml(c.author_name) + ':</span> ' + escapeHtml(c.body) + '</div>';
+          }).join('');
+        });
     }
 
     function getVotedIds() {
@@ -265,6 +333,34 @@ export default {
     if (request.method === "POST" && voteMatch) {
       try {
         const data = await callWorkflow(env, VOTE_WORKFLOW_ID, { ideaId: Number(voteMatch[1]) });
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
+    const commentsMatch = url.pathname.match(/^\/api\/ideas\/(\d+)\/comments$/);
+    if (request.method === "GET" && commentsMatch) {
+      try {
+        const data = await callWorkflow(env, LIST_COMMENTS_WORKFLOW_ID, { ideaId: Number(commentsMatch[1]) });
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message, comments: [] }, 502);
+      }
+    }
+    if (request.method === "POST" && commentsMatch) {
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ ok: false, error: "invalid JSON body" }, 400);
+      }
+      try {
+        const data = await callWorkflow(env, ADD_COMMENT_WORKFLOW_ID, {
+          ideaId: Number(commentsMatch[1]),
+          authorName: body.authorName || "Anonymous",
+          body: body.body,
+        });
         return json(data);
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
