@@ -51,70 +51,213 @@ function escapeHtml(s) {
 }
 
 function boardPage(customerSlug) {
+  const favicon =
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cpath d='M9 22V10h7.2c2.9 0 4.8 1.7 4.8 4.3 0 1.9-1 3.3-2.7 3.9L22 22h-3.3l-3.2-3.4H12V22H9zm3-5.8h4c1.4 0 2.2-.7 2.2-1.9 0-1.2-.8-1.8-2.2-1.8h-4v3.7z' fill='white'/%3E%3C/svg%3E";
   return `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>RequestHub - ${escapeHtml(customerSlug)}</title>
+  <link rel="icon" href="${favicon}" />
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #1a1a1a; background: #fafafa; }
-    h1 { font-size: 22px; margin-bottom: 4px; }
-    .sub { color: #666; margin-bottom: 24px; font-size: 14px; }
-    form { background: #fff; border: 1px solid #e5e5e5; border-radius: 10px; padding: 16px; margin-bottom: 28px; }
-    label { display: block; font-size: 13px; font-weight: 600; margin-top: 10px; margin-bottom: 4px; }
-    input, textarea, select { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #d0d0d0; border-radius: 6px; font-size: 14px; font-family: inherit; }
-    textarea { resize: vertical; min-height: 60px; }
-    button { margin-top: 14px; background: #1f2937; color: #fff; border: none; padding: 10px 18px; border-radius: 6px; font-size: 14px; cursor: pointer; }
-    button:hover { background: #111827; }
-    .idea { background: #fff; border: 1px solid #e5e5e5; border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
-    .idea-title { font-weight: 600; font-size: 15px; }
-    .idea-desc { color: #444; font-size: 14px; margin-top: 4px; }
-    .meta { margin-top: 8px; display: flex; gap: 8px; align-items: center; font-size: 12px; flex-wrap: wrap; }
-    .tag { padding: 2px 8px; border-radius: 999px; background: #eef2ff; color: #3730a3; }
-    .tag.Bug { background: #fee2e2; color: #991b1b; }
-    .tag.Feedback { background: #ecfdf5; color: #065f46; }
-    .status { color: #888; }
-    .empty { color: #888; font-size: 14px; }
-    .status-select { width: auto; padding: 3px 6px; font-size: 12px; }
-    .idea-row { display: flex; gap: 12px; align-items: flex-start; }
-    .vote-btn { width: auto; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px 10px; border: 1px solid #d0d0d0; border-radius: 8px; background: #fff; cursor: pointer; font-size: 11px; color: #444; line-height: 1.1; }
-    .vote-btn:hover { background: #f3f4f6; }
-    .vote-btn.voted { background: #eef2ff; border-color: #3730a3; color: #3730a3; cursor: default; }
-    .vote-btn .count { font-size: 15px; font-weight: 700; }
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --text-faint: #94a3b8;
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --primary-light: #eef2ff;
+      --radius-lg: 16px;
+      --radius-md: 10px;
+      --radius-sm: 7px;
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+      --shadow-md: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 12px rgba(15, 23, 42, 0.04);
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      color: var(--text);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+    }
+    .topbar {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .logo-mark {
+      width: 30px; height: 30px; border-radius: 8px;
+      background: var(--primary); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 15px; flex-shrink: 0;
+    }
+    .brand { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; }
+    .tenant-pill {
+      margin-left: auto; font-size: 12px; font-weight: 600; color: var(--primary);
+      background: var(--primary-light); padding: 4px 10px; border-radius: 999px;
+    }
+    .page { max-width: 680px; margin: 0 auto; padding: 32px 20px 64px; }
+    .hero { margin-bottom: 24px; }
+    .hero h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -0.02em; }
+    .hero p { margin: 0; color: var(--text-muted); font-size: 14.5px; }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+    }
+    form.card { padding: 20px; margin-bottom: 32px; }
+    .field { margin-bottom: 14px; }
+    .field:last-of-type { margin-bottom: 0; }
+    label {
+      display: block; font-size: 12px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 6px;
+    }
+    label .optional { text-transform: none; font-weight: 400; letter-spacing: normal; color: var(--text-faint); }
+    input, textarea, select {
+      width: 100%; padding: 10px 12px; border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm); font-size: 14px; font-family: inherit; color: var(--text);
+      background: #fff; transition: border-color .15s, box-shadow .15s;
+    }
+    input::placeholder, textarea::placeholder { color: var(--text-faint); }
+    input:focus, textarea:focus, select:focus {
+      outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light);
+    }
+    textarea { resize: vertical; min-height: 64px; }
+    .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    button { font-family: inherit; cursor: pointer; }
+    .btn-primary {
+      background: var(--primary); color: #fff; border: none; padding: 11px 20px;
+      border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; margin-top: 16px;
+      transition: background .15s;
+    }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .section-head {
+      display: flex; align-items: baseline; justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .section-head h2 { font-size: 15px; margin: 0; color: var(--text-muted); font-weight: 600; }
+    .empty {
+      color: var(--text-faint); font-size: 14px; text-align: center; padding: 32px 16px;
+    }
+    .idea {
+      padding: 16px; margin-bottom: 10px;
+    }
+    .idea-row { display: flex; gap: 14px; align-items: flex-start; }
+    .vote-btn {
+      flex-shrink: 0; width: 54px; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 1px; padding: 8px 4px; border: 1px solid var(--border-strong);
+      border-radius: var(--radius-md); background: #fff; color: var(--text-muted);
+      font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em;
+      transition: all .15s;
+    }
+    .vote-btn::before { content: "▲"; font-size: 9px; color: var(--text-faint); margin-bottom: 2px; }
+    .vote-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+    .vote-btn:hover::before { color: var(--primary); }
+    .vote-btn.voted { background: var(--primary); border-color: var(--primary); color: #fff; cursor: default; }
+    .vote-btn.voted::before { color: #fff; }
+    .vote-btn .count { font-size: 17px; font-weight: 700; font-family: inherit; line-height: 1.1; }
     .idea-body { flex: 1; min-width: 0; }
-    .comments-toggle { background: none; border: none; color: #3730a3; font-size: 12px; cursor: pointer; padding: 0; margin-top: 8px; width: auto; }
-    .comments-toggle:hover { text-decoration: underline; }
-    .comments { display: none; margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px; }
+    .idea-title { font-weight: 600; font-size: 15px; letter-spacing: -0.005em; }
+    .idea-desc { color: var(--text-muted); font-size: 13.5px; margin-top: 3px; line-height: 1.45; }
+    .meta { margin-top: 10px; display: flex; gap: 8px; align-items: center; font-size: 12px; flex-wrap: wrap; }
+    .tag {
+      padding: 3px 9px; border-radius: 999px; font-weight: 600; font-size: 11.5px;
+      background: var(--primary-light); color: var(--primary);
+    }
+    .tag.Bug { background: #fee2e2; color: #b91c1c; }
+    .tag.Feedback { background: #d1fae5; color: #047857; }
+    .status-select {
+      width: auto; padding: 4px 8px; font-size: 12px; font-weight: 600; border-radius: 999px;
+      border-color: var(--border); background: #f1f5f9; color: var(--text-muted);
+      -webkit-appearance: none; appearance: none; cursor: pointer;
+    }
+    .status-select:focus { box-shadow: 0 0 0 3px var(--primary-light); }
+    .comments-toggle {
+      background: none; border: none; color: var(--text-muted); font-size: 12.5px; font-weight: 600;
+      cursor: pointer; padding: 0; margin-top: 10px; width: auto; display: inline-flex; align-items: center; gap: 4px;
+    }
+    .comments-toggle::before { content: "💬"; font-size: 12px; }
+    .comments-toggle:hover { color: var(--primary); }
+    .comments {
+      display: none; margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px;
+    }
     .comments.open { display: block; }
-    .comment { font-size: 13px; margin-bottom: 8px; }
-    .comment-author { font-weight: 600; }
-    .comment-form { display: flex; gap: 6px; margin-top: 8px; }
-    .comment-form input { flex: 1; margin: 0; padding: 6px 8px; font-size: 13px; }
-    .comment-form button { margin: 0; padding: 6px 12px; font-size: 13px; }
+    .comments-list { margin-bottom: 10px; }
+    .comment { font-size: 13px; margin-bottom: 10px; display: flex; gap: 8px; }
+    .comment-avatar {
+      width: 22px; height: 22px; border-radius: 50%; background: var(--primary-light); color: var(--primary);
+      font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .comment-body-text { color: var(--text); line-height: 1.4; }
+    .comment-author { font-weight: 600; margin-right: 4px; }
+    .comment-form { display: flex; gap: 6px; }
+    .comment-form input { flex: 1; margin: 0; padding: 7px 10px; font-size: 13px; }
+    .comment-form button {
+      margin: 0; padding: 7px 14px; font-size: 13px; font-weight: 600; border: none;
+      border-radius: var(--radius-sm); background: var(--primary); color: #fff;
+    }
+    .comment-form button:hover { background: var(--primary-hover); }
+    .footer-note {
+      text-align: center; color: var(--text-faint); font-size: 12px; margin-top: 32px;
+    }
+    @media (max-width: 480px) {
+      .page { padding: 20px 14px 48px; }
+      .row-2 { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
-  <h1>RequestHub</h1>
-  <div class="sub">Feedback board for <strong>${escapeHtml(customerSlug)}</strong></div>
+  <div class="topbar">
+    <div class="logo-mark">R</div>
+    <div class="brand">RequestHub</div>
+    <div class="tenant-pill">${escapeHtml(customerSlug)}</div>
+  </div>
 
-  <form id="submit-form">
-    <label>What's your idea, bug, or feedback?</label>
-    <input id="title" required maxlength="200" placeholder="e.g. Add dark mode" />
-    <label>More detail (optional)</label>
-    <textarea id="description" maxlength="2000"></textarea>
-    <label>Category</label>
-    <select id="category">
-      <option>Feature</option>
-      <option>Bug</option>
-      <option>Feedback</option>
-    </select>
-    <label>Your email (optional - we'll notify you on updates)</label>
-    <input id="submitterEmail" type="email" placeholder="you@example.com" />
-    <button type="submit">Submit</button>
-  </form>
+  <div class="page">
+    <div class="hero">
+      <h1>Feedback board</h1>
+      <p>Share an idea, report a bug, or vote on what we should build next.</p>
+    </div>
 
-  <div id="list"><div class="empty">Loading...</div></div>
+    <form id="submit-form" class="card">
+      <div class="field">
+        <label>What's your idea, bug, or feedback?</label>
+        <input id="title" required maxlength="200" placeholder="e.g. Add dark mode" />
+      </div>
+      <div class="field">
+        <label>More detail <span class="optional">(optional)</span></label>
+        <textarea id="description" maxlength="2000" placeholder="Add any extra context..."></textarea>
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <label>Category</label>
+          <select id="category">
+            <option>Feature</option>
+            <option>Bug</option>
+            <option>Feedback</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Your email <span class="optional">(optional)</span></label>
+          <input id="submitterEmail" type="email" placeholder="you@example.com" />
+        </div>
+      </div>
+      <button type="submit" class="btn-primary">Submit feedback</button>
+    </form>
+
+    <div class="section-head"><h2>All requests</h2></div>
+    <div id="list"><div class="empty">Loading...</div></div>
+
+    <div class="footer-note">Powered by RequestHub, built on Fastn</div>
+  </div>
 
   <script>
     const customerSlug = ${JSON.stringify(customerSlug)};
@@ -133,7 +276,7 @@ function boardPage(customerSlug) {
           return '<option value="' + s + '"' + (s === i.status ? ' selected' : '') + '>' + s.replace('_', ' ') + '</option>';
         }).join('');
         const hasVoted = voted.indexOf(i.id) !== -1;
-        return '<div class="idea">' +
+        return '<div class="idea card">' +
           '<div class="idea-row">' +
           '<button class="vote-btn' + (hasVoted ? ' voted' : '') + '" data-idea-id="' + i.id + '"' + (hasVoted ? ' disabled' : '') + '>' +
           '<span class="count">' + i.votes + '</span><span>vote' + (i.votes === 1 ? '' : 's') + '</span>' +
@@ -227,7 +370,11 @@ function boardPage(customerSlug) {
             return;
           }
           listEl.innerHTML = comments.map(function (c) {
-            return '<div class="comment"><span class="comment-author">' + escapeHtml(c.author_name) + ':</span> ' + escapeHtml(c.body) + '</div>';
+            const initial = (c.author_name || '?').trim().charAt(0).toUpperCase() || '?';
+            return '<div class="comment">' +
+              '<div class="comment-avatar">' + escapeHtml(initial) + '</div>' +
+              '<div class="comment-body-text"><span class="comment-author">' + escapeHtml(c.author_name) + '</span>' + escapeHtml(c.body) + '</div>' +
+              '</div>';
           }).join('');
         });
     }
