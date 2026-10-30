@@ -52,7 +52,7 @@ function escapeHtml(s) {
 
 function boardPage(customerSlug) {
   const favicon =
-    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cpath d='M9 22V10h7.2c2.9 0 4.8 1.7 4.8 4.3 0 1.9-1 3.3-2.7 3.9L22 22h-3.3l-3.2-3.4H12V22H9zm3-5.8h4c1.4 0 2.2-.7 2.2-1.9 0-1.2-.8-1.8-2.2-1.8h-4v3.7z' fill='white'/%3E%3C/svg%3E";
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236d5ef8'/%3E%3Cpath d='M9 22V10h7.2c2.9 0 4.8 1.7 4.8 4.3 0 1.9-1 3.3-2.7 3.9L22 22h-3.3l-3.2-3.4H12V22H9zm3-5.8h4c1.4 0 2.2-.7 2.2-1.9 0-1.2-.8-1.8-2.2-1.8h-4v3.7z' fill='white'/%3E%3C/svg%3E";
   return `<!doctype html>
 <html>
 <head>
@@ -60,209 +60,245 @@ function boardPage(customerSlug) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>RequestHub - ${escapeHtml(customerSlug)}</title>
   <link rel="icon" href="${favicon}" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
   <style>
     :root {
-      --bg: #f8fafc;
-      --card: #ffffff;
-      --border: #e2e8f0;
-      --border-strong: #cbd5e1;
-      --text: #0f172a;
-      --text-muted: #64748b;
-      --text-faint: #94a3b8;
-      --primary: #4f46e5;
-      --primary-hover: #4338ca;
-      --primary-light: #eef2ff;
-      --radius-lg: 16px;
-      --radius-md: 10px;
-      --radius-sm: 7px;
-      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
-      --shadow-md: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 12px rgba(15, 23, 42, 0.04);
+      --bg: #0b0b10;
+      --surface: #16151d;
+      --surface-2: #1d1c26;
+      --surface-3: #252430;
+      --border: #2a2935;
+      --text: #f3f2f7;
+      --text-muted: #9492a3;
+      --text-faint: #65636f;
+      --accent: #6d5ef8;
+      --accent-hover: #5b4de3;
+      --accent-tint: rgba(109, 94, 248, 0.16);
+      --good: #22c58b;
+      --good-tint: rgba(34, 197, 139, 0.14);
+      --warn: #e8a53d;
+      --warn-tint: rgba(232, 165, 61, 0.14);
+      --bad: #f06a6a;
+      --bad-tint: rgba(240, 106, 106, 0.14);
+      --info: #4ea8f0;
+      --info-tint: rgba(78, 168, 240, 0.14);
+      --radius: 12px;
     }
     * { box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      margin: 0;
-      color: var(--text);
-      background: var(--bg);
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: "Inter", -apple-system, sans-serif; font-size: 14.5px; line-height: 1.5;
       -webkit-font-smoothing: antialiased;
     }
+    .icon { width: 14px; height: 14px; display: inline-block; vertical-align: -2px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
     .topbar {
-      background: var(--card);
-      border-bottom: 1px solid var(--border);
-      padding: 16px 20px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 14px 24px; display: flex; align-items: center; gap: 10px;
     }
     .logo-mark {
-      width: 30px; height: 30px; border-radius: 8px;
-      background: var(--primary); color: #fff;
-      display: flex; align-items: center; justify-content: center;
-      font-weight: 700; font-size: 15px; flex-shrink: 0;
+      width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff;
+      display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0;
     }
-    .brand { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; }
-    .tenant-pill {
-      margin-left: auto; font-size: 12px; font-weight: 600; color: var(--primary);
-      background: var(--primary-light); padding: 4px 10px; border-radius: 999px;
+    .brand { font-weight: 700; font-size: 15px; }
+    .brand .org { color: var(--text-faint); font-weight: 500; }
+
+    .page { max-width: 1040px; margin: 0 auto; padding: 28px 24px 80px; }
+
+    .hero {
+      background: linear-gradient(135deg, var(--accent-tint), transparent 60%), var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius); padding: 22px 24px; margin-bottom: 24px;
     }
-    .page { max-width: 680px; margin: 0 auto; padding: 32px 20px 64px; }
-    .hero { margin-bottom: 24px; }
-    .hero h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -0.02em; }
-    .hero p { margin: 0; color: var(--text-muted); font-size: 14.5px; }
-    .card {
-      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg);
-      box-shadow: var(--shadow-sm);
+    .hero h1 { font-size: 20px; margin: 0 0 4px; }
+    .hero p { margin: 0; color: var(--text-muted); font-size: 13.5px; }
+    .hero p b { color: var(--text); }
+
+    .board-layout { display: grid; grid-template-columns: 1fr 250px; gap: 24px; align-items: start; }
+    .board-layout .sidebar { order: 2; }
+    .board-layout .main { order: 1; }
+    @media (max-width: 760px) { .board-layout { grid-template-columns: 1fr; } .sidebar { order: -1; } }
+
+    .sidebar { display: flex; flex-direction: column; gap: 18px; position: sticky; top: 20px; }
+    .btn-add {
+      width: 100%; background: var(--accent); color: #fff; border: none; padding: 11px 14px;
+      border-radius: 9px; font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit;
+      display: flex; align-items: center; justify-content: center; gap: 6px; transition: background .15s;
     }
-    form.card { padding: 20px; margin-bottom: 32px; }
-    .field { margin-bottom: 14px; }
-    .field:last-of-type { margin-bottom: 0; }
-    label {
-      display: block; font-size: 12px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 6px;
+    .btn-add:hover { background: var(--accent-hover); }
+
+    .nav-list { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px; }
+    .nav-item {
+      display: flex; align-items: center; gap: 9px; width: 100%; background: none; border: none; cursor: pointer;
+      color: var(--text-muted); font-family: inherit; font-size: 13.5px; font-weight: 500; padding: 9px 10px;
+      border-radius: 8px; text-align: left;
     }
-    label .optional { text-transform: none; font-weight: 400; letter-spacing: normal; color: var(--text-faint); }
-    input, textarea, select {
-      width: 100%; padding: 10px 12px; border: 1px solid var(--border-strong);
-      border-radius: var(--radius-sm); font-size: 14px; font-family: inherit; color: var(--text);
-      background: #fff; transition: border-color .15s, box-shadow .15s;
+    .nav-item:hover { background: var(--surface-2); color: var(--text); }
+    .nav-item.active { background: var(--accent-tint); color: var(--accent); font-weight: 600; }
+    .nav-item .count { margin-left: auto; font-size: 11.5px; color: var(--text-faint); }
+    .nav-item.active .count { color: var(--accent); }
+
+    .main { min-width: 0; }
+    .filters-row { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .filters-row input, .filters-row select {
+      background: var(--surface); border: 1px solid var(--border); color: var(--text);
+      border-radius: 9px; padding: 9px 12px; font-size: 13px; font-family: inherit;
     }
-    input::placeholder, textarea::placeholder { color: var(--text-faint); }
-    input:focus, textarea:focus, select:focus {
-      outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light);
-    }
-    textarea { resize: vertical; min-height: 64px; }
-    .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    button { font-family: inherit; cursor: pointer; }
-    .btn-primary {
-      background: var(--primary); color: #fff; border: none; padding: 11px 20px;
-      border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; margin-top: 16px;
-      transition: background .15s;
-    }
-    .btn-primary:hover { background: var(--primary-hover); }
-    .section-head {
-      display: flex; align-items: baseline; justify-content: space-between;
-      margin-bottom: 12px;
-    }
-    .section-head h2 { font-size: 15px; margin: 0; color: var(--text-muted); font-weight: 600; }
-    .empty {
-      color: var(--text-faint); font-size: 14px; text-align: center; padding: 32px 16px;
-    }
-    .idea {
-      padding: 16px; margin-bottom: 10px;
-    }
+    .filters-row input { flex: 1; min-width: 160px; }
+    .filters-row input::placeholder { color: var(--text-faint); }
+    .filters-row select { cursor: pointer; }
+
+    .empty { color: var(--text-faint); font-size: 13.5px; text-align: center; padding: 40px 16px; }
+
+    .idea { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 15px 16px; margin-bottom: 8px; }
     .idea-row { display: flex; gap: 14px; align-items: flex-start; }
-    .vote-btn {
-      flex-shrink: 0; width: 56px; display: flex; flex-direction: column; align-items: center;
-      justify-content: center; gap: 1px; padding: 8px 4px; border: 1px solid var(--border-strong);
-      border-radius: var(--radius-md); background: #fff; color: var(--text-muted);
-      font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em;
-      transition: all .15s;
-    }
-    .vote-btn .vote-icon { font-size: 9px; color: var(--text-faint); margin-bottom: 2px; line-height: 1; }
-    .vote-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
-    .vote-btn:hover .vote-icon { color: var(--primary); }
-    .vote-btn .count { font-size: 17px; font-weight: 700; font-family: inherit; line-height: 1.1; }
-    .vote-btn .vote-undo { display: none; }
-    .vote-btn.voted { background: var(--primary); border-color: var(--primary); color: #fff; }
-    .vote-btn.voted .vote-icon { color: #fff; }
-    .vote-btn.voted.hover-undo { background: #dc2626; border-color: #dc2626; }
-    .vote-btn.voted.hover-undo .vote-default { display: none; }
-    .vote-btn.voted.hover-undo .vote-undo { display: flex; flex-direction: column; align-items: center; }
-    .vote-btn.voted.hover-undo .vote-undo .vote-icon { color: #fff; }
     .idea-body { flex: 1; min-width: 0; }
-    .idea-title { font-weight: 600; font-size: 15px; letter-spacing: -0.005em; }
-    .idea-desc { color: var(--text-muted); font-size: 13.5px; margin-top: 3px; line-height: 1.45; }
-    .meta { margin-top: 10px; display: flex; gap: 8px; align-items: center; font-size: 12px; flex-wrap: wrap; }
-    .tag {
-      padding: 3px 9px; border-radius: 999px; font-weight: 600; font-size: 11.5px;
-      background: var(--primary-light); color: var(--primary);
+    .idea-title { font-weight: 600; font-size: 14.5px; }
+    .idea-desc { color: var(--text-muted); font-size: 13px; margin-top: 3px; line-height: 1.45; }
+    .meta { margin-top: 10px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+    .chip {
+      display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px;
+      font-weight: 600; font-size: 11px;
     }
-    .tag.Bug { background: #fee2e2; color: #b91c1c; }
-    .tag.Feedback { background: #d1fae5; color: #047857; }
+    .chip.cat-Feature { background: var(--accent-tint); color: var(--accent); }
+    .chip.cat-Bug { background: var(--bad-tint); color: var(--bad); }
+    .chip.cat-Feedback { background: var(--good-tint); color: var(--good); }
+
     .status-select {
-      width: auto; padding: 4px 8px; font-size: 12px; font-weight: 600; border-radius: 999px;
-      border-color: var(--border); background: #f1f5f9; color: var(--text-muted);
-      -webkit-appearance: none; appearance: none; cursor: pointer;
+      appearance: none; -webkit-appearance: none; border: none; cursor: pointer; font-family: inherit;
+      font-size: 11px; font-weight: 600; padding: 3px 22px 3px 9px; border-radius: 999px;
+      background-repeat: no-repeat; background-position: right 7px center; background-size: 9px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239492a3' stroke-width='3'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
     }
-    .status-select:focus { box-shadow: 0 0 0 3px var(--primary-light); }
-    .comments-toggle {
-      background: none; border: none; color: var(--text-muted); font-size: 12.5px; font-weight: 600;
-      cursor: pointer; padding: 0; margin-top: 10px; width: auto; display: inline-flex; align-items: center; gap: 4px;
-    }
-    .comments-toggle::before { content: "💬"; font-size: 12px; }
-    .comments-toggle:hover { color: var(--primary); }
-    .comments {
-      display: none; margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px;
-    }
+    .status-select.under_review { background-color: var(--surface-3); color: var(--text-muted); }
+    .status-select.planned { background-color: var(--info-tint); color: var(--info); }
+    .status-select.in_progress { background-color: var(--warn-tint); color: var(--warn); }
+    .status-select.shipped { background-color: var(--good-tint); color: var(--good); }
+    .status-select option { background: var(--surface); color: var(--text); }
+
+    .meta-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+    .comment-count { display: inline-flex; align-items: center; gap: 4px; color: var(--text-faint); font-size: 12px; font-weight: 500; background: none; border: none; cursor: pointer; font-family: inherit; padding: 0; }
+    .comment-count:hover { color: var(--text); }
+
+    .vote-widget { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 1px; width: 36px; }
+    .vote-arrow { background: none; border: none; cursor: pointer; color: var(--text-faint); padding: 2px; display: flex; }
+    .vote-arrow:hover:not(:disabled) { color: var(--accent); }
+    .vote-arrow:disabled { opacity: .25; cursor: default; }
+    .vote-arrow.on { color: var(--accent); }
+    .vote-count { font-size: 15px; font-weight: 700; font-family: "IBM Plex Mono", monospace; }
+
+    .comments { display: none; margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
     .comments.open { display: block; }
     .comments-list { margin-bottom: 10px; }
-    .comment { font-size: 13px; margin-bottom: 10px; display: flex; gap: 8px; }
+    .comment { font-size: 12.5px; margin-bottom: 10px; display: flex; gap: 8px; }
     .comment-avatar {
-      width: 22px; height: 22px; border-radius: 50%; background: var(--primary-light); color: var(--primary);
-      font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      width: 20px; height: 20px; border-radius: 50%; background: var(--accent-tint); color: var(--accent);
+      font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     }
     .comment-body-text { color: var(--text); line-height: 1.4; }
     .comment-author { font-weight: 600; margin-right: 4px; }
     .comment-form { display: flex; flex-wrap: wrap; gap: 6px; }
-    .comment-form input { margin: 0; padding: 7px 10px; font-size: 13px; }
-    .comment-form .comment-name { flex: 1 1 110px; }
-    .comment-form .comment-email { flex: 1 1 140px; }
+    .comment-form input {
+      background: var(--surface-2); border: 1px solid var(--border); color: var(--text); margin: 0;
+      padding: 7px 10px; font-size: 12.5px; border-radius: 7px; font-family: inherit;
+    }
+    .comment-form input::placeholder { color: var(--text-faint); }
+    .comment-form .comment-name { flex: 1 1 100px; }
+    .comment-form .comment-email { flex: 1 1 130px; }
     .comment-form .comment-body { flex: 1 1 100%; }
     .comment-form button {
-      margin: 0; padding: 7px 14px; font-size: 13px; font-weight: 600; border: none;
-      border-radius: var(--radius-sm); background: var(--primary); color: #fff;
+      margin: 0; padding: 7px 14px; font-size: 12.5px; font-weight: 600; border: none;
+      border-radius: 7px; background: var(--accent); color: #fff; cursor: pointer; font-family: inherit;
     }
-    .comment-form button:hover { background: var(--primary-hover); }
-    .footer-note {
-      text-align: center; color: var(--text-faint); font-size: 12px; margin-top: 32px;
+    .comment-form button:hover { background: var(--accent-hover); }
+
+    .form-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 18px 20px; margin-bottom: 20px; display: none;
     }
-    @media (max-width: 480px) {
-      .page { padding: 20px 14px 48px; }
-      .row-2 { grid-template-columns: 1fr; }
+    .form-card.open { display: block; }
+    .form-card h3 { margin: 0 0 12px; font-size: 14px; }
+    .field { margin-bottom: 12px; }
+    .field label { display: block; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--text-faint); margin-bottom: 5px; }
+    .field input, .field textarea, .field select {
+      width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: 9px 11px; font-size: 13.5px; font-family: inherit;
     }
+    .field textarea { resize: vertical; min-height: 60px; }
+    .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .btn-submit {
+      background: var(--accent); color: #fff; border: none; padding: 10px 18px; border-radius: 8px;
+      font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit; margin-top: 4px;
+    }
+    .btn-submit:hover { background: var(--accent-hover); }
+    .btn-cancel {
+      background: none; color: var(--text-muted); border: none; padding: 10px 14px; font-size: 13.5px;
+      cursor: pointer; font-family: inherit;
+    }
+
+    .footer-note { text-align: center; color: var(--text-faint); font-size: 11.5px; margin-top: 32px; }
   </style>
 </head>
 <body>
   <div class="topbar">
     <div class="logo-mark">R</div>
-    <div class="brand">RequestHub</div>
-    <div class="tenant-pill">${escapeHtml(customerSlug)}</div>
+    <div class="brand">RequestHub <span class="org">/ ${escapeHtml(customerSlug)}</span></div>
   </div>
 
   <div class="page">
     <div class="hero">
-      <h1>Feedback board</h1>
-      <p>Share an idea, report a bug, or vote on what we should build next.</p>
+      <h1>Welcome to <b>${escapeHtml(customerSlug)}</b>'s feedback board</h1>
+      <p>Submit an idea, vote on what matters, and follow along as we ship it.</p>
     </div>
 
-    <form id="submit-form" class="card">
-      <div class="field">
-        <label>What's your idea, bug, or feedback?</label>
-        <input id="title" required maxlength="200" placeholder="e.g. Add dark mode" />
+    <div class="board-layout">
+      <div class="sidebar">
+        <button class="btn-add" id="openFormBtn">+ Add feedback</button>
+        <div class="nav-list" id="categoryNav"></div>
       </div>
-      <div class="field">
-        <label>More detail <span class="optional">(optional)</span></label>
-        <textarea id="description" maxlength="2000" placeholder="Add any extra context..."></textarea>
-      </div>
-      <div class="row-2">
-        <div class="field">
-          <label>Category</label>
-          <select id="category">
-            <option>Feature</option>
-            <option>Bug</option>
-            <option>Feedback</option>
+
+      <div class="main">
+        <div class="form-card" id="formCard">
+          <h3>Share your feedback</h3>
+          <form id="submit-form">
+            <div class="field">
+              <label>What's your idea, bug, or feedback?</label>
+              <input id="title" required maxlength="200" placeholder="e.g. Add dark mode" />
+            </div>
+            <div class="field">
+              <label>More detail (optional)</label>
+              <textarea id="description" maxlength="2000" placeholder="Add any extra context..."></textarea>
+            </div>
+            <div class="row-2">
+              <div class="field">
+                <label>Category</label>
+                <select id="category">
+                  <option>Feature</option>
+                  <option>Bug</option>
+                  <option>Feedback</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Your email (optional)</label>
+                <input id="submitterEmail" type="email" placeholder="you@example.com" />
+              </div>
+            </div>
+            <button type="submit" class="btn-submit">Submit</button>
+            <button type="button" class="btn-cancel" id="cancelFormBtn">Cancel</button>
+          </form>
+        </div>
+
+        <div class="filters-row">
+          <input id="search" placeholder="Search feedback..." />
+          <select id="sort">
+            <option value="votes">Most voted</option>
+            <option value="new">Newest</option>
           </select>
         </div>
-        <div class="field">
-          <label>Your email <span class="optional">(optional)</span></label>
-          <input id="submitterEmail" type="email" placeholder="you@example.com" />
-        </div>
-      </div>
-      <button type="submit" class="btn-primary">Submit feedback</button>
-    </form>
 
-    <div class="section-head"><h2>All requests</h2></div>
-    <div id="list"><div class="empty">Loading...</div></div>
+        <div id="list"><div class="empty">Loading...</div></div>
+      </div>
+    </div>
 
     <div class="footer-note">Powered by RequestHub, built on Fastn</div>
   </div>
@@ -270,11 +306,38 @@ function boardPage(customerSlug) {
   <script>
     const customerSlug = ${JSON.stringify(customerSlug)};
     const statuses = ${JSON.stringify(STATUSES)};
+    const categories = ["Feature", "Bug", "Feedback"];
+    let allIdeas = [];
+    let activeCategory = "all";
 
-    function render(ideas) {
+    const ICONS = {
+      chevronUp: '<svg class="icon" viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15"/></svg>',
+      chevronDown: '<svg class="icon" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>',
+      comment: '<svg class="icon" viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-4.8 7.6 8.5 8.5 0 0 1-9.4-1.2L3 21l1.9-4.3a8.38 8.38 0 0 1-1.2-4.4 8.5 8.5 0 0 1 7.6-8.4 8.38 8.38 0 0 1 9.5 7.1 8.5 8.5 0 0 1 .2 1.5z"/></svg>',
+      all: '<svg class="icon" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>',
+      Feature: '<svg class="icon" viewBox="0 0 24 24"><path d="M9 18h6M10 22h4M12 2a6 6 0 0 0-4 10.5c.7.6 1 1.3 1 2.5h6c0-1.2.3-1.9 1-2.5A6 6 0 0 0 12 2z"/></svg>',
+      Bug: '<svg class="icon" viewBox="0 0 24 24"><rect x="8" y="7" width="8" height="12" rx="4"/><path d="M12 7V4M9 5l-1.5-1.5M15 5l1.5-1.5M5 11H3M21 11h-2M5 16H3M21 16h-2M8 19l-2 2M16 19l2 2"/></svg>',
+      Feedback: '<svg class="icon" viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-4.8 7.6 8.5 8.5 0 0 1-9.4-1.2L3 21l1.9-4.3a8.38 8.38 0 0 1-1.2-4.4 8.5 8.5 0 0 1 7.6-8.4 8.38 8.38 0 0 1 9.5 7.1 8.5 8.5 0 0 1 .2 1.5z"/></svg>'
+    };
+
+    function render() {
+      renderNav();
       const list = document.getElementById('list');
+      const q = (document.getElementById('search').value || '').toLowerCase();
+      const sort = document.getElementById('sort').value;
+
+      let ideas = allIdeas.filter(function (i) {
+        if (activeCategory !== 'all' && i.category !== activeCategory) return false;
+        if (q && i.title.toLowerCase().indexOf(q) === -1 && (i.description || '').toLowerCase().indexOf(q) === -1) return false;
+        return true;
+      });
+      ideas = ideas.slice().sort(function (a, b) {
+        if (sort === 'new') return new Date(b.created_at) - new Date(a.created_at);
+        return b.votes - a.votes;
+      });
+
       if (!ideas.length) {
-        list.innerHTML = '<div class="empty">No ideas yet - be the first!</div>';
+        list.innerHTML = '<div class="empty">No feedback yet - be the first!</div>';
         return;
       }
       const voted = getVotedIds();
@@ -284,19 +347,18 @@ function boardPage(customerSlug) {
           return '<option value="' + s + '"' + (s === i.status ? ' selected' : '') + '>' + s.replace('_', ' ') + '</option>';
         }).join('');
         const hasVoted = voted.indexOf(i.id) !== -1;
-        return '<div class="idea card">' +
+        return '<div class="idea">' +
           '<div class="idea-row">' +
-          '<button class="vote-btn' + (hasVoted ? ' voted' : '') + '" data-idea-id="' + i.id + '" data-voted="' + (hasVoted ? '1' : '0') + '" title="' + (hasVoted ? 'Click to remove your vote' : 'Click to vote') + '">' +
-          '<span class="vote-default"><span class="vote-icon">▲</span><span class="count">' + i.votes + '</span><span>vote' + (i.votes === 1 ? '' : 's') + '</span></span>' +
-          '<span class="vote-undo"><span class="vote-icon">✕</span><span>undo</span></span>' +
-          '</button>' +
           '<div class="idea-body">' +
           '<div class="idea-title">' + escapeHtml(i.title) + '</div>' +
           (i.description ? '<div class="idea-desc">' + escapeHtml(i.description) + '</div>' : '') +
-          '<div class="meta"><span class="tag ' + i.category + '">' + i.category + '</span>' +
-          '<select class="status-select" data-idea-id="' + i.id + '">' + options + '</select>' +
+          '<div class="meta">' +
+          '<span class="chip cat-' + i.category + '">' + (ICONS[i.category] || '') + i.category + '</span>' +
+          '<select class="status-select ' + i.status + '" data-idea-id="' + i.id + '">' + options + '</select>' +
+          '<span class="meta-right">' +
+          '<button class="comment-count" data-idea-id="' + i.id + '">' + ICONS.comment + '<span class="cc-num">Comments</span></button>' +
+          '</span>' +
           '</div>' +
-          '<button class="comments-toggle" data-idea-id="' + i.id + '">Comments</button>' +
           '<div class="comments" id="comments-' + i.id + '">' +
           '<div class="comments-list"></div>' +
           '<form class="comment-form" data-idea-id="' + i.id + '">' +
@@ -307,12 +369,18 @@ function boardPage(customerSlug) {
           '</form>' +
           '</div>' +
           '</div>' +
+          '<div class="vote-widget">' +
+          '<button class="vote-arrow up' + (hasVoted ? ' on' : '') + '" data-idea-id="' + i.id + '"' + (hasVoted ? ' disabled' : '') + ' title="Vote">' + ICONS.chevronUp + '</button>' +
+          '<span class="vote-count">' + i.votes + '</span>' +
+          '<button class="vote-arrow down' + (hasVoted ? '' : ' disabled') + '" data-idea-id="' + i.id + '"' + (hasVoted ? '' : ' disabled') + ' title="Remove vote">' + ICONS.chevronDown + '</button>' +
+          '</div>' +
           '</div>' +
           '</div>';
       }).join('');
 
       list.querySelectorAll('.status-select').forEach(function (sel) {
         sel.addEventListener('change', function () {
+          sel.className = 'status-select ' + sel.value;
           const ideaId = sel.getAttribute('data-idea-id');
           fetch('/api/ideas/' + ideaId + '/status', {
             method: 'POST',
@@ -324,17 +392,11 @@ function boardPage(customerSlug) {
         });
       });
 
-      list.querySelectorAll('.vote-btn').forEach(function (btn) {
-        btn.addEventListener('mouseenter', function () {
-          if (btn.classList.contains('voted')) btn.classList.add('hover-undo');
-        });
-        btn.addEventListener('mouseleave', function () {
-          btn.classList.remove('hover-undo');
-        });
+      list.querySelectorAll('.vote-arrow').forEach(function (btn) {
         btn.addEventListener('click', function () {
+          if (btn.disabled) return;
           const ideaId = btn.getAttribute('data-idea-id');
-          const isVoted = btn.getAttribute('data-voted') === '1';
-          const direction = isVoted ? 'down' : 'up';
+          const direction = btn.classList.contains('up') ? 'up' : 'down';
           fetch('/api/ideas/' + ideaId + '/vote', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -342,14 +404,14 @@ function boardPage(customerSlug) {
           })
             .then(function (r) { return r.json(); })
             .then(function () {
-              if (isVoted) removeVotedId(Number(ideaId));
-              else addVotedId(Number(ideaId));
+              if (direction === 'up') addVotedId(Number(ideaId));
+              else removeVotedId(Number(ideaId));
               load();
             });
         });
       });
 
-      list.querySelectorAll('.comments-toggle').forEach(function (btn) {
+      list.querySelectorAll('.comment-count').forEach(function (btn) {
         btn.addEventListener('click', function () {
           const ideaId = btn.getAttribute('data-idea-id');
           const panel = document.getElementById('comments-' + ideaId);
@@ -385,6 +447,25 @@ function boardPage(customerSlug) {
       });
     }
 
+    function renderNav() {
+      const nav = document.getElementById('categoryNav');
+      const counts = { all: allIdeas.length };
+      categories.forEach(function (c) { counts[c] = allIdeas.filter(function (i) { return i.category === c; }).length; });
+      const items = [{ key: 'all', label: 'All feedback', icon: ICONS.all }].concat(
+        categories.map(function (c) { return { key: c, label: c, icon: ICONS[c] }; })
+      );
+      nav.innerHTML = items.map(function (it) {
+        return '<button class="nav-item' + (activeCategory === it.key ? ' active' : '') + '" data-cat="' + it.key + '">' +
+          it.icon + '<span>' + it.label + '</span><span class="count">' + counts[it.key] + '</span></button>';
+      }).join('');
+      nav.querySelectorAll('.nav-item').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          activeCategory = btn.getAttribute('data-cat');
+          render();
+        });
+      });
+    }
+
     function loadComments(ideaId) {
       const panel = document.getElementById('comments-' + ideaId);
       const listEl = panel.querySelector('.comments-list');
@@ -408,13 +489,9 @@ function boardPage(customerSlug) {
     }
 
     function getVotedIds() {
-      try {
-        return JSON.parse(localStorage.getItem('requesthub_voted_' + customerSlug) || '[]');
-      } catch {
-        return [];
-      }
+      try { return JSON.parse(localStorage.getItem('requesthub_voted_' + customerSlug) || '[]'); }
+      catch { return []; }
     }
-
     function addVotedId(id) {
       try {
         const ids = getVotedIds();
@@ -422,7 +499,6 @@ function boardPage(customerSlug) {
         localStorage.setItem('requesthub_voted_' + customerSlug, JSON.stringify(ids));
       } catch {}
     }
-
     function removeVotedId(id) {
       try {
         const ids = getVotedIds().filter(function (v) { return v !== id; });
@@ -439,8 +515,19 @@ function boardPage(customerSlug) {
     function load() {
       fetch('/api/ideas?customer=' + encodeURIComponent(customerSlug))
         .then(function (r) { return r.json(); })
-        .then(function (d) { render(d.ideas || []); });
+        .then(function (d) { allIdeas = d.ideas || []; render(); });
     }
+
+    document.getElementById('search').addEventListener('input', render);
+    document.getElementById('sort').addEventListener('change', render);
+
+    document.getElementById('openFormBtn').addEventListener('click', function () {
+      document.getElementById('formCard').classList.add('open');
+      document.getElementById('title').focus();
+    });
+    document.getElementById('cancelFormBtn').addEventListener('click', function () {
+      document.getElementById('formCard').classList.remove('open');
+    });
 
     document.getElementById('submit-form').addEventListener('submit', function (e) {
       e.preventDefault();
@@ -459,6 +546,7 @@ function boardPage(customerSlug) {
           document.getElementById('title').value = '';
           document.getElementById('description').value = '';
           document.getElementById('submitterEmail').value = '';
+          document.getElementById('formCard').classList.remove('open');
           load();
         });
     });
