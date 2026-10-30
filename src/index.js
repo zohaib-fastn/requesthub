@@ -152,18 +152,23 @@ function boardPage(customerSlug) {
     }
     .idea-row { display: flex; gap: 14px; align-items: flex-start; }
     .vote-btn {
-      flex-shrink: 0; width: 54px; display: flex; flex-direction: column; align-items: center;
+      flex-shrink: 0; width: 56px; display: flex; flex-direction: column; align-items: center;
       justify-content: center; gap: 1px; padding: 8px 4px; border: 1px solid var(--border-strong);
       border-radius: var(--radius-md); background: #fff; color: var(--text-muted);
       font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em;
       transition: all .15s;
     }
-    .vote-btn::before { content: "▲"; font-size: 9px; color: var(--text-faint); margin-bottom: 2px; }
+    .vote-btn .vote-icon { font-size: 9px; color: var(--text-faint); margin-bottom: 2px; line-height: 1; }
     .vote-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
-    .vote-btn:hover::before { color: var(--primary); }
-    .vote-btn.voted { background: var(--primary); border-color: var(--primary); color: #fff; cursor: default; }
-    .vote-btn.voted::before { color: #fff; }
+    .vote-btn:hover .vote-icon { color: var(--primary); }
     .vote-btn .count { font-size: 17px; font-weight: 700; font-family: inherit; line-height: 1.1; }
+    .vote-btn .vote-undo { display: none; }
+    .vote-btn.voted { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .vote-btn.voted .vote-icon { color: #fff; }
+    .vote-btn.voted.hover-undo { background: #dc2626; border-color: #dc2626; }
+    .vote-btn.voted.hover-undo .vote-default { display: none; }
+    .vote-btn.voted.hover-undo .vote-undo { display: flex; flex-direction: column; align-items: center; }
+    .vote-btn.voted.hover-undo .vote-undo .vote-icon { color: #fff; }
     .idea-body { flex: 1; min-width: 0; }
     .idea-title { font-weight: 600; font-size: 15px; letter-spacing: -0.005em; }
     .idea-desc { color: var(--text-muted); font-size: 13.5px; margin-top: 3px; line-height: 1.45; }
@@ -198,8 +203,11 @@ function boardPage(customerSlug) {
     }
     .comment-body-text { color: var(--text); line-height: 1.4; }
     .comment-author { font-weight: 600; margin-right: 4px; }
-    .comment-form { display: flex; gap: 6px; }
-    .comment-form input { flex: 1; margin: 0; padding: 7px 10px; font-size: 13px; }
+    .comment-form { display: flex; flex-wrap: wrap; gap: 6px; }
+    .comment-form input { margin: 0; padding: 7px 10px; font-size: 13px; }
+    .comment-form .comment-name { flex: 1 1 110px; }
+    .comment-form .comment-email { flex: 1 1 140px; }
+    .comment-form .comment-body { flex: 1 1 100%; }
     .comment-form button {
       margin: 0; padding: 7px 14px; font-size: 13px; font-weight: 600; border: none;
       border-radius: var(--radius-sm); background: var(--primary); color: #fff;
@@ -278,8 +286,9 @@ function boardPage(customerSlug) {
         const hasVoted = voted.indexOf(i.id) !== -1;
         return '<div class="idea card">' +
           '<div class="idea-row">' +
-          '<button class="vote-btn' + (hasVoted ? ' voted' : '') + '" data-idea-id="' + i.id + '"' + (hasVoted ? ' disabled' : '') + '>' +
-          '<span class="count">' + i.votes + '</span><span>vote' + (i.votes === 1 ? '' : 's') + '</span>' +
+          '<button class="vote-btn' + (hasVoted ? ' voted' : '') + '" data-idea-id="' + i.id + '" data-voted="' + (hasVoted ? '1' : '0') + '" title="' + (hasVoted ? 'Click to remove your vote' : 'Click to vote') + '">' +
+          '<span class="vote-default"><span class="vote-icon">▲</span><span class="count">' + i.votes + '</span><span>vote' + (i.votes === 1 ? '' : 's') + '</span></span>' +
+          '<span class="vote-undo"><span class="vote-icon">✕</span><span>undo</span></span>' +
           '</button>' +
           '<div class="idea-body">' +
           '<div class="idea-title">' + escapeHtml(i.title) + '</div>' +
@@ -292,6 +301,7 @@ function boardPage(customerSlug) {
           '<div class="comments-list"></div>' +
           '<form class="comment-form" data-idea-id="' + i.id + '">' +
           '<input class="comment-name" placeholder="Your name" maxlength="80" />' +
+          '<input class="comment-email" type="email" placeholder="Email (optional)" maxlength="200" />' +
           '<input class="comment-body" placeholder="Add a comment..." maxlength="2000" required />' +
           '<button type="submit">Post</button>' +
           '</form>' +
@@ -314,13 +324,26 @@ function boardPage(customerSlug) {
         });
       });
 
-      list.querySelectorAll('.vote-btn:not(.voted)').forEach(function (btn) {
+      list.querySelectorAll('.vote-btn').forEach(function (btn) {
+        btn.addEventListener('mouseenter', function () {
+          if (btn.classList.contains('voted')) btn.classList.add('hover-undo');
+        });
+        btn.addEventListener('mouseleave', function () {
+          btn.classList.remove('hover-undo');
+        });
         btn.addEventListener('click', function () {
           const ideaId = btn.getAttribute('data-idea-id');
-          fetch('/api/ideas/' + ideaId + '/vote', { method: 'POST' })
+          const isVoted = btn.getAttribute('data-voted') === '1';
+          const direction = isVoted ? 'down' : 'up';
+          fetch('/api/ideas/' + ideaId + '/vote', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ direction }),
+          })
             .then(function (r) { return r.json(); })
             .then(function () {
-              addVotedId(Number(ideaId));
+              if (isVoted) removeVotedId(Number(ideaId));
+              else addVotedId(Number(ideaId));
               load();
             });
         });
@@ -340,13 +363,18 @@ function boardPage(customerSlug) {
           e.preventDefault();
           const ideaId = form.getAttribute('data-idea-id');
           const nameInput = form.querySelector('.comment-name');
+          const emailInput = form.querySelector('.comment-email');
           const bodyInput = form.querySelector('.comment-body');
           const body = bodyInput.value.trim();
           if (!body) return;
           fetch('/api/ideas/' + ideaId + '/comments', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ authorName: nameInput.value.trim() || 'Anonymous', body }),
+            body: JSON.stringify({
+              authorName: nameInput.value.trim() || 'Anonymous',
+              authorEmail: emailInput.value.trim(),
+              body,
+            }),
           })
             .then(function (r) { return r.json(); })
             .then(function () {
@@ -391,6 +419,13 @@ function boardPage(customerSlug) {
       try {
         const ids = getVotedIds();
         if (ids.indexOf(id) === -1) ids.push(id);
+        localStorage.setItem('requesthub_voted_' + customerSlug, JSON.stringify(ids));
+      } catch {}
+    }
+
+    function removeVotedId(id) {
+      try {
+        const ids = getVotedIds().filter(function (v) { return v !== id; });
         localStorage.setItem('requesthub_voted_' + customerSlug, JSON.stringify(ids));
       } catch {}
     }
@@ -480,8 +515,17 @@ export default {
 
     const voteMatch = url.pathname.match(/^\/api\/ideas\/(\d+)\/vote$/);
     if (request.method === "POST" && voteMatch) {
+      let voteBody = {};
       try {
-        const data = await callWorkflow(env, VOTE_WORKFLOW_ID, { ideaId: Number(voteMatch[1]) });
+        voteBody = await request.json();
+      } catch {
+        voteBody = {};
+      }
+      try {
+        const data = await callWorkflow(env, VOTE_WORKFLOW_ID, {
+          ideaId: Number(voteMatch[1]),
+          direction: voteBody.direction === "down" ? "down" : "up",
+        });
         return json(data);
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
@@ -508,6 +552,7 @@ export default {
         const data = await callWorkflow(env, ADD_COMMENT_WORKFLOW_ID, {
           ideaId: Number(commentsMatch[1]),
           authorName: body.authorName || "Anonymous",
+          authorEmail: body.authorEmail || "",
           body: body.body,
         });
         return json(data);
