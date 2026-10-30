@@ -9,6 +9,14 @@ const STATUSES = ["under_review", "planned", "in_progress", "shipped"];
 const DEFAULT_LINEAR_TEAM_ID = "6a0351f8-9f72-49b7-a11a-753726597688";
 const DEFAULT_NOTION_PAGE_ID = "409a930e-131b-8141-b9b3-e1f703a67f6f";
 
+// Maps a board's customerSlug to its real Fastn tenant (end_org_id), so the
+// embedded connect page knows which tenant's widgets to show. "demo" has no
+// backing tenant (it predates the multi-tenant work), so it's intentionally
+// left out - the connect page shows a clear message for any unmapped slug.
+const TENANT_ORG_IDS = {
+  "acme-saas": "b14dc996-d036-4797-8908-adbc63f15b77",
+};
+
 function html(body) {
   return new Response(body, {
     headers: { "content-type": "text/html; charset=utf-8" },
@@ -48,6 +56,92 @@ function escapeHtml(s) {
     '"': "&quot;",
     "'": "&#39;",
   }[c]));
+}
+
+async function mintEmbedToken(env, endOrgId, customerSlug) {
+  const res = await fetch(`${FASTN_BASE}/api/v1/embed/token`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.FASTN_API_KEY}`,
+      "X-fastn-Test-Mode": "true",
+      "x-fastn-env": "test",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      endOrgId,
+      createIfMissing: true,
+      customerName: customerSlug,
+    }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error || `embed token mint failed: ${res.status}`);
+  }
+  return body?.data?.token;
+}
+
+function connectPage(customerSlug, endOrgId, token) {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Connect your tools - RequestHub</title>
+  <style>
+    body { margin: 0; background: #0b0b10; color: #f3f2f7; font-family: -apple-system, sans-serif; }
+    .topbar { background: #16151d; border-bottom: 1px solid #2a2935; padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: #6d5ef8; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+    .brand { font-weight: 700; font-size: 15px; }
+    .back { margin-left: auto; color: #9492a3; font-size: 13px; text-decoration: none; }
+    .page { max-width: 760px; margin: 0 auto; padding: 24px; }
+    .hero { margin-bottom: 20px; }
+    .hero h1 { font-size: 19px; margin: 0 0 4px; }
+    .hero p { margin: 0; color: #9492a3; font-size: 13.5px; }
+    .frame-wrap { border: 1px solid #2a2935; border-radius: 14px; overflow: hidden; min-height: 600px; background: #16151d; }
+    .frame-wrap iframe { display: block; width: 100%; height: 600px; border: none; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo-mark">R</div>
+    <div class="brand">RequestHub</div>
+    <a class="back" href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+  </div>
+  <div class="page">
+    <div class="hero">
+      <h1>Connect your tools</h1>
+      <p>Connect your own Slack, Linear, and Notion so submissions, status updates, and your changelog flow into your own workspace - without leaving RequestHub.</p>
+    </div>
+    <div class="frame-wrap">
+      <iframe src="${FASTN_BASE}/api/v1/embed/iframe?token=${encodeURIComponent(token)}&org-id=${encodeURIComponent(endOrgId)}&theme=dark" allow="clipboard-write"></iframe>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+function connectUnavailablePage(customerSlug) {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Connect your tools - RequestHub</title>
+  <style>
+    body { margin: 0; background: #0b0b10; color: #f3f2f7; font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { max-width: 420px; text-align: center; padding: 32px; }
+    h1 { font-size: 18px; margin: 0 0 8px; }
+    p { color: #9492a3; font-size: 13.5px; margin: 0 0 16px; }
+    a { color: #6d5ef8; font-size: 13px; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>No connected workspace yet</h1>
+    <p>"${escapeHtml(customerSlug)}" isn't set up as a tenant with connectable tools yet.</p>
+    <a href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+  </div>
+</body>
+</html>`;
 }
 
 function boardPage(customerSlug) {
@@ -255,6 +349,10 @@ function boardPage(customerSlug) {
       <div class="sidebar">
         <button class="btn-add" id="openFormBtn">+ Add feedback</button>
         <div class="nav-list" id="categoryNav"></div>
+        <a class="nav-list" style="display:flex;align-items:center;gap:9px;padding:9px 10px;color:var(--text-muted);text-decoration:none;font-size:13.5px;font-weight:500;" href="/b/${encodeURIComponent(customerSlug)}/connect">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.5-1.5"/></svg>
+          Connect your tools
+        </a>
       </div>
 
       <div class="main">
@@ -568,6 +666,21 @@ export default {
     const boardMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/?$/);
     if (request.method === "GET" && boardMatch) {
       return html(boardPage(boardMatch[1]));
+    }
+
+    const connectMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/connect\/?$/);
+    if (request.method === "GET" && connectMatch) {
+      const customerSlug = connectMatch[1];
+      const endOrgId = TENANT_ORG_IDS[customerSlug];
+      if (!endOrgId) {
+        return html(connectUnavailablePage(customerSlug));
+      }
+      try {
+        const token = await mintEmbedToken(env, endOrgId, customerSlug);
+        return html(connectPage(customerSlug, endOrgId, token));
+      } catch (err) {
+        return html(connectUnavailablePage(customerSlug));
+      }
     }
 
     if (request.method === "GET" && url.pathname === "/api/ideas") {
