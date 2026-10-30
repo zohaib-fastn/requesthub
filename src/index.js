@@ -6,6 +6,8 @@ const ADD_COMMENT_WORKFLOW_ID = "wf_fc41a427478e";
 const LIST_COMMENTS_WORKFLOW_ID = "wf_115e3671bb89";
 const FASTN_BASE = "https://api.fastn.dev";
 const STATUSES = ["under_review", "planned", "in_progress", "shipped"];
+const DEFAULT_LINEAR_TEAM_ID = "6a0351f8-9f72-49b7-a11a-753726597688";
+const DEFAULT_NOTION_PAGE_ID = "409a930e-131b-8141-b9b3-e1f703a67f6f";
 
 function html(body) {
   return new Response(body, {
@@ -382,8 +384,8 @@ export default {
         const data = await callWorkflow(env, UPDATE_STATUS_WORKFLOW_ID, {
           ideaId: Number(statusMatch[1]),
           status: body.status,
-          linearTeamId: body.linearTeamId || "",
-          notionPageId: body.notionPageId || "",
+          linearTeamId: body.linearTeamId || DEFAULT_LINEAR_TEAM_ID,
+          notionPageId: body.notionPageId || DEFAULT_NOTION_PAGE_ID,
         });
         return json(data);
       } catch (err) {
