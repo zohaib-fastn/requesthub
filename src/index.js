@@ -1,6 +1,7 @@
 const SUBMIT_WORKFLOW_ID = "wf_3316b2d12e5f";
 const LIST_WORKFLOW_ID = "wf_a825a0c0f5bd";
 const UPDATE_STATUS_WORKFLOW_ID = "wf_b5b1e6e18d9b";
+const VOTE_WORKFLOW_ID = "wf_af7b6c5033db";
 const FASTN_BASE = "https://api.fastn.dev";
 const STATUSES = ["under_review", "planned", "in_progress", "shipped"];
 
@@ -71,7 +72,13 @@ function boardPage(customerSlug) {
     .tag.Feedback { background: #ecfdf5; color: #065f46; }
     .status { color: #888; }
     .empty { color: #888; font-size: 14px; }
-    .status-select { width: auto; padding: 3px 6px; font-size: 12px; margin-left: auto; }
+    .status-select { width: auto; padding: 3px 6px; font-size: 12px; }
+    .idea-row { display: flex; gap: 12px; align-items: flex-start; }
+    .vote-btn { width: auto; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px 10px; border: 1px solid #d0d0d0; border-radius: 8px; background: #fff; cursor: pointer; font-size: 11px; color: #444; line-height: 1.1; }
+    .vote-btn:hover { background: #f3f4f6; }
+    .vote-btn.voted { background: #eef2ff; border-color: #3730a3; color: #3730a3; cursor: default; }
+    .vote-btn .count { font-size: 15px; font-weight: 700; }
+    .idea-body { flex: 1; min-width: 0; }
   </style>
 </head>
 <body>
@@ -106,15 +113,25 @@ function boardPage(customerSlug) {
         list.innerHTML = '<div class="empty">No ideas yet - be the first!</div>';
         return;
       }
+      const voted = getVotedIds();
+
       list.innerHTML = ideas.map(function (i) {
         const options = statuses.map(function (s) {
           return '<option value="' + s + '"' + (s === i.status ? ' selected' : '') + '>' + s.replace('_', ' ') + '</option>';
         }).join('');
+        const hasVoted = voted.indexOf(i.id) !== -1;
         return '<div class="idea">' +
+          '<div class="idea-row">' +
+          '<button class="vote-btn' + (hasVoted ? ' voted' : '') + '" data-idea-id="' + i.id + '"' + (hasVoted ? ' disabled' : '') + '>' +
+          '<span class="count">' + i.votes + '</span><span>vote' + (i.votes === 1 ? '' : 's') + '</span>' +
+          '</button>' +
+          '<div class="idea-body">' +
           '<div class="idea-title">' + escapeHtml(i.title) + '</div>' +
           (i.description ? '<div class="idea-desc">' + escapeHtml(i.description) + '</div>' : '') +
           '<div class="meta"><span class="tag ' + i.category + '">' + i.category + '</span>' +
           '<select class="status-select" data-idea-id="' + i.id + '">' + options + '</select>' +
+          '</div>' +
+          '</div>' +
           '</div>' +
           '</div>';
       }).join('');
@@ -131,6 +148,34 @@ function boardPage(customerSlug) {
             .then(function () { load(); });
         });
       });
+
+      list.querySelectorAll('.vote-btn:not(.voted)').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          const ideaId = btn.getAttribute('data-idea-id');
+          fetch('/api/ideas/' + ideaId + '/vote', { method: 'POST' })
+            .then(function (r) { return r.json(); })
+            .then(function () {
+              addVotedId(Number(ideaId));
+              load();
+            });
+        });
+      });
+    }
+
+    function getVotedIds() {
+      try {
+        return JSON.parse(localStorage.getItem('requesthub_voted_' + customerSlug) || '[]');
+      } catch {
+        return [];
+      }
+    }
+
+    function addVotedId(id) {
+      try {
+        const ids = getVotedIds();
+        if (ids.indexOf(id) === -1) ids.push(id);
+        localStorage.setItem('requesthub_voted_' + customerSlug, JSON.stringify(ids));
+      } catch {}
     }
 
     function escapeHtml(s) {
@@ -210,6 +255,16 @@ export default {
           category: body.category || "Feature",
           submitterEmail: body.submitterEmail || "",
         });
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
+    const voteMatch = url.pathname.match(/^\/api\/ideas\/(\d+)\/vote$/);
+    if (request.method === "POST" && voteMatch) {
+      try {
+        const data = await callWorkflow(env, VOTE_WORKFLOW_ID, { ideaId: Number(voteMatch[1]) });
         return json(data);
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
