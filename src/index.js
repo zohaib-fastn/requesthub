@@ -266,6 +266,208 @@ async function getTenantOrgId(env, customerSlug) {
   }
 }
 
+function homePage() {
+  const pricingCards = PLANS.map(function (p) {
+    const features = p.features.map((f) => `<li>${escapeHtml(f)}</li>`).join("");
+    return `<div class="plan-card${p.id === "growth" ? " featured" : ""}">
+      ${p.id === "growth" ? '<div class="featured-badge">Most popular</div>' : ""}
+      <div class="plan-name">${escapeHtml(p.name)}</div>
+      <div class="plan-price">${p.price}<span>${p.period}</span></div>
+      <div class="plan-blurb">${escapeHtml(p.blurb)}</div>
+      <ul class="plan-features">${features}</ul>
+      <a class="plan-btn" href="/signup">Get started</a>
+    </div>`;
+  }).join("");
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RequestHub - feedback boards for SaaS teams</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500&display=swap">
+  <style>
+    :root {
+      --bg: #0b0b10; --surface: #16151d; --surface-2: #1d1c26; --surface-3: #252430;
+      --border: #2a2935; --text: #f3f2f7; --text-muted: #9492a3; --text-faint: #65636f;
+      --accent: #6d5ef8; --accent-hover: #5b4de3; --accent-tint: rgba(109, 94, 248, 0.16);
+      --good: #22c58b;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: "Inter", -apple-system, sans-serif; line-height: 1.5; }
+    a { color: inherit; }
+    .nav { position: sticky; top: 0; z-index: 10; background: rgba(11,11,16,.85); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+    .brand { font-weight: 700; font-size: 15px; }
+    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 18px; }
+    .nav-link { color: var(--text-muted); text-decoration: none; font-size: 13.5px; font-weight: 500; }
+    .nav-link:hover { color: var(--text); }
+    .nav-cta { background: var(--accent); color: #fff; text-decoration: none; font-size: 13.5px; font-weight: 600; padding: 8px 16px; border-radius: 8px; }
+    .nav-cta:hover { background: var(--accent-hover); }
+
+    .hero { max-width: 760px; margin: 0 auto; padding: 90px 24px 60px; text-align: center; }
+    .hero h1 { font-size: 40px; font-weight: 800; margin: 0 0 16px; letter-spacing: -0.02em; line-height: 1.15; }
+    .hero h1 .accent { color: var(--accent); }
+    .hero p { color: var(--text-muted); font-size: 16px; margin: 0 0 32px; max-width: 540px; margin-left: auto; margin-right: auto; }
+    .hero-ctas { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .btn-primary { background: var(--accent); color: #fff; text-decoration: none; font-size: 14.5px; font-weight: 600; padding: 12px 22px; border-radius: 9px; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-secondary { background: var(--surface); border: 1px solid var(--border); color: var(--text); text-decoration: none; font-size: 14.5px; font-weight: 600; padding: 12px 22px; border-radius: 9px; }
+    .btn-secondary:hover { background: var(--surface-2); }
+
+    .section { max-width: 1040px; margin: 0 auto; padding: 60px 24px; }
+    .section-label { text-align: center; color: var(--accent); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+    .section-title { text-align: center; font-size: 26px; font-weight: 700; margin: 0 0 40px; }
+
+    .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    @media (max-width: 760px) { .features { grid-template-columns: 1fr; } }
+    .feature-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px 20px; }
+    .feature-icon { width: 36px; height: 36px; border-radius: 9px; background: var(--accent-tint); color: var(--accent); display: flex; align-items: center; justify-content: center; margin-bottom: 14px; }
+    .feature-icon svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; }
+    .feature-card h3 { font-size: 15px; margin: 0 0 6px; }
+    .feature-card p { color: var(--text-muted); font-size: 13px; margin: 0; line-height: 1.5; }
+
+    .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    @media (max-width: 760px) { .plans { grid-template-columns: 1fr; } }
+    .plan-card { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px 20px; display: flex; flex-direction: column; }
+    .plan-card.featured { border-color: var(--accent); }
+    .featured-badge { position: absolute; top: -10px; left: 20px; background: var(--accent); color: #fff; font-size: 10.5px; font-weight: 700; padding: 3px 10px; border-radius: 999px; text-transform: uppercase; letter-spacing: .03em; }
+    .plan-name { font-weight: 700; font-size: 16px; margin-bottom: 6px; }
+    .plan-price { font-size: 26px; font-weight: 700; margin-bottom: 8px; }
+    .plan-price span { font-size: 13px; font-weight: 500; color: var(--text-muted); }
+    .plan-blurb { color: var(--text-muted); font-size: 12.5px; margin-bottom: 16px; line-height: 1.4; }
+    .plan-features { list-style: none; padding: 0; margin: 0 0 20px; flex: 1; }
+    .plan-features li { font-size: 13px; color: #c9c7d4; padding: 5px 0 5px 20px; position: relative; }
+    .plan-features li::before { content: "✓"; position: absolute; left: 0; color: var(--good); font-weight: 700; }
+    .plan-btn { display: block; text-align: center; background: var(--accent); color: #fff; text-decoration: none; padding: 10px; border-radius: 8px; font-size: 13.5px; font-weight: 600; }
+    .plan-btn:hover { background: var(--accent-hover); }
+
+    .cta-band { max-width: 760px; margin: 0 auto; padding: 50px 24px 100px; text-align: center; }
+    .cta-band h2 { font-size: 24px; margin: 0 0 10px; }
+    .cta-band p { color: var(--text-muted); font-size: 14px; margin: 0 0 24px; }
+
+    .footer { border-top: 1px solid var(--border); text-align: center; color: var(--text-faint); font-size: 12px; padding: 24px; }
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <div class="logo-mark">R</div>
+    <div class="brand">RequestHub</div>
+    <div class="nav-right">
+      <a class="nav-link" href="#pricing">Pricing</a>
+      <a class="nav-link" href="/login">Log in</a>
+      <a class="nav-cta" href="/signup">Get started</a>
+    </div>
+  </div>
+
+  <div class="hero">
+    <h1>Turn customer feedback into your <span class="accent">product roadmap</span></h1>
+    <p>A branded feedback board for your SaaS - submissions, votes, and a public roadmap, wired into your own Slack, Linear, and Notion. Add it to your site with one line of code.</p>
+    <div class="hero-ctas">
+      <a class="btn-primary" href="/signup">Start free - no card required</a>
+      <a class="btn-secondary" href="/b/demo">See a live demo &rarr;</a>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">What you get</div>
+    <div class="section-title">Everything a feedback loop needs</div>
+    <div class="features">
+      <div class="feature-card">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-4.8 7.6 8.5 8.5 0 0 1-9.4-1.2L3 21l1.9-4.3a8.38 8.38 0 0 1-1.2-4.4 8.5 8.5 0 0 1 7.6-8.4 8.38 8.38 0 0 1 9.5 7.1 8.5 8.5 0 0 1 .2 1.5z"/></svg></div>
+        <h3>Public feedback board</h3>
+        <p>Your customers submit ideas, bugs, and feedback, vote on what matters, and see it move through your pipeline.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/></svg></div>
+        <h3>Kanban roadmap</h3>
+        <p>A public roadmap view grouped by status - Under Review, Planned, In Progress, Shipped - so customers always know what's next.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+        <h3>Triage dashboard</h3>
+        <p>Every idea in one filterable view - search, filter by status or category, and move things forward with one click.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.5-1.5"/></svg></div>
+        <h3>Connect your own tools</h3>
+        <p>Wire up your own Slack, Linear, and Notion. Moving an idea to Planned creates a real ticket; Shipped archives it and announces it.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+        <h3>Embed anywhere</h3>
+        <p>One script tag adds a floating feedback button to your own site - no iframe, no CORS setup, works from any domain.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+        <h3>Set up in minutes</h3>
+        <p>Pick a name, get a real board instantly. Connect your tools and add the embed snippet whenever you're ready.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section" id="pricing">
+    <div class="section-label">Pricing</div>
+    <div class="section-title">Simple, transparent pricing</div>
+    <div class="plans">${pricingCards}</div>
+  </div>
+
+  <div class="cta-band">
+    <h2>Ready to hear from your customers?</h2>
+    <p>Set up your own board in under a minute - no credit card required.</p>
+    <a class="btn-primary" href="/signup">Start your board &rarr;</a>
+  </div>
+
+  <div class="footer">Powered by RequestHub, built on Fastn</div>
+</body>
+</html>`;
+}
+
+function loginLookupPage(errorMsg) {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Log in - RequestHub</title>
+  <style>
+    body { margin: 0; background: #0b0b10; color: #f3f2f7; font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { width: 100%; max-width: 360px; padding: 32px; background: #16151d; border: 1px solid #2a2935; border-radius: 14px; box-sizing: border-box; }
+    .logo-mark { width: 32px; height: 32px; border-radius: 9px; background: #6d5ef8; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; margin-bottom: 14px; }
+    h1 { font-size: 19px; margin: 0 0 6px; }
+    p { color: #9492a3; font-size: 13px; margin: 0 0 18px; line-height: 1.5; }
+    input { width: 100%; background: #1d1c26; border: 1px solid #2a2935; color: #f3f2f7; border-radius: 8px; padding: 10px 12px; font-size: 14px; box-sizing: border-box; margin-bottom: 12px; font-family: inherit; }
+    button { width: 100%; background: #6d5ef8; color: #fff; border: none; padding: 11px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    button:hover { background: #5b4de3; }
+    .error { color: #f06a6a; font-size: 12.5px; margin: -4px 0 12px; }
+    .back { display: block; text-align: center; margin-top: 16px; color: #9492a3; font-size: 12.5px; text-decoration: none; }
+    .back:hover { color: #fff; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo-mark">R</div>
+    <h1>Log in to your board</h1>
+    <p>Enter your board's name to go to its admin login.</p>
+    ${errorMsg ? `<div class="error">${escapeHtml(errorMsg)}</div>` : ""}
+    <form id="form">
+      <input id="slug" required placeholder="e.g. acme-saas" autofocus />
+      <button type="submit">Continue</button>
+    </form>
+    <a class="back" href="/">&larr; Back home</a>
+  </div>
+  <script>
+    document.getElementById('form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var slug = document.getElementById('slug').value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+      if (!slug) return;
+      window.location.href = '/b/' + encodeURIComponent(slug) + '/admin';
+    });
+  </script>
+</body>
+</html>`;
+}
+
 function signupPage(errorMsg) {
   return `<!doctype html>
 <html>
@@ -1657,7 +1859,11 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === "GET" && (url.pathname === "/" || url.pathname === "")) {
-      return html(boardPage("demo"));
+      return html(homePage());
+    }
+
+    if (request.method === "GET" && url.pathname === "/login") {
+      return html(loginLookupPage(url.searchParams.get("error")));
     }
 
     if (request.method === "GET" && url.pathname === "/embed.js") {
