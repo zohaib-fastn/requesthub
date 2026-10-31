@@ -6,6 +6,8 @@ const ADD_COMMENT_WORKFLOW_ID = "wf_fc41a427478e";
 const LIST_COMMENTS_WORKFLOW_ID = "wf_115e3671bb89";
 const GET_CUSTOMER_AUTH_WORKFLOW_ID = "wf_0ec5d57bcc56";
 const SET_CUSTOMER_PASSWORD_WORKFLOW_ID = "wf_1f8a663661bc";
+const GET_CUSTOMER_ORG_WORKFLOW_ID = "wf_c754da22758d";
+const SET_CUSTOMER_ORG_WORKFLOW_ID = "wf_3978c47d84a7";
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const FASTN_BASE = "https://api.fastn.dev";
 const STATUSES = ["under_review", "planned", "in_progress", "shipped"];
@@ -198,6 +200,191 @@ async function createSetupLink(env, widgetId, endOrgId, label) {
     throw new Error(body?.error || `setup link creation failed: ${res.status}`);
   }
   return body?.data?.setupUrl;
+}
+
+function slugify(name) {
+  let slug = String(name || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (slug.length > 48) slug = slug.slice(0, 48).replace(/-+$/g, "");
+  return slug;
+}
+
+async function createOrg(env, name, slug) {
+  const res = await fetch(`${FASTN_BASE}/api/v1/orgs`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.FASTN_API_KEY}`,
+      "X-fastn-Test-Mode": "true",
+      "x-fastn-env": "test",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ name, slug, type: "end_org" }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error || `org creation failed: ${res.status}`);
+  }
+  return body?.data;
+}
+
+async function createInstallationForTenant(env, widgetId, endOrgId, label) {
+  const res = await fetch(`${FASTN_BASE}/api/v1/installations`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.FASTN_API_KEY}`,
+      "X-fastn-Test-Mode": "true",
+      "x-fastn-env": "test",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ target_type: "widget", target_id: widgetId, widget_id: widgetId, end_org_id: endOrgId, label }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error || `installation creation failed: ${res.status}`);
+  }
+  return body?.data;
+}
+
+async function getTenantOrgId(env, customerSlug) {
+  if (TENANT_ORG_IDS[customerSlug]) return TENANT_ORG_IDS[customerSlug];
+  try {
+    const data = await callWorkflow(env, GET_CUSTOMER_ORG_WORKFLOW_ID, { customerSlug });
+    return data?.orgId || null;
+  } catch {
+    return null;
+  }
+}
+
+function signupPage(errorMsg) {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Start your board - RequestHub</title>
+  <style>
+    body { margin: 0; background: #0b0b10; color: #f3f2f7; font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { width: 100%; max-width: 400px; padding: 32px; background: #16151d; border: 1px solid #2a2935; border-radius: 14px; box-sizing: border-box; }
+    .logo-mark { width: 32px; height: 32px; border-radius: 9px; background: #6d5ef8; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; margin-bottom: 14px; }
+    h1 { font-size: 19px; margin: 0 0 6px; }
+    p { color: #9492a3; font-size: 13px; margin: 0 0 18px; line-height: 1.5; }
+    label { display: block; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: #65636f; margin-bottom: 5px; }
+    input {
+      width: 100%; background: #1d1c26; border: 1px solid #2a2935; color: #f3f2f7; border-radius: 8px;
+      padding: 10px 12px; font-size: 14px; box-sizing: border-box; margin-bottom: 4px; font-family: inherit;
+    }
+    .hint { color: #65636f; font-size: 11.5px; margin: 0 0 16px; }
+    .hint b { color: #9492a3; }
+    button { width: 100%; background: #6d5ef8; color: #fff; border: none; padding: 11px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    button:hover { background: #5b4de3; }
+    button:disabled { background: #2a2935; color: #65636f; cursor: default; }
+    .error { color: #f06a6a; font-size: 12.5px; margin: -4px 0 12px; }
+    .back { display: block; text-align: center; margin-top: 16px; color: #9492a3; font-size: 12.5px; text-decoration: none; }
+    .back:hover { color: #fff; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo-mark">R</div>
+    <h1>Start your own feedback board</h1>
+    <p>Enter your company name and we'll set up a real board, with your own Slack, Linear, and Notion connections - no login, no credit card.</p>
+    ${errorMsg ? `<div class="error">${escapeHtml(errorMsg)}</div>` : ""}
+    <form id="form">
+      <label>Company name</label>
+      <input id="name" required maxlength="60" placeholder="e.g. Acme SaaS" autofocus />
+      <div class="hint" id="hint">Your board will be at requesthub.zohaib-iot.workers.dev/b/<b id="slugPreview">your-slug</b></div>
+      <button type="submit" id="submitBtn">Create my board</button>
+    </form>
+    <a class="back" href="/">&larr; Back</a>
+  </div>
+  <script>
+    var nameInput = document.getElementById('name');
+    var slugPreview = document.getElementById('slugPreview');
+    function slugify(s) {
+      return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
+    }
+    nameInput.addEventListener('input', function () {
+      slugPreview.textContent = slugify(nameInput.value) || 'your-slug';
+    });
+    document.getElementById('form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.textContent = 'Creating your board...';
+      fetch('/api/signup', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: nameInput.value.trim() }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.ok) {
+            window.location.href = '/signup/done?slug=' + encodeURIComponent(d.slug);
+          } else {
+            window.location.href = '/signup?error=' + encodeURIComponent(d.error || 'Could not create your board');
+          }
+        })
+        .catch(function () {
+          window.location.href = '/signup?error=' + encodeURIComponent('Something went wrong - try again');
+        });
+    });
+  </script>
+</body>
+</html>`;
+}
+
+function signupDonePage(customerSlug) {
+  const base = "https://requesthub.zohaib-iot.workers.dev";
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>You're set up - RequestHub</title>
+  <style>
+    body { margin: 0; background: #0b0b10; color: #f3f2f7; font-family: -apple-system, sans-serif; }
+    .page { max-width: 560px; margin: 0 auto; padding: 48px 24px; }
+    .logo-mark { width: 32px; height: 32px; border-radius: 9px; background: #6d5ef8; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; margin-bottom: 18px; }
+    h1 { font-size: 21px; margin: 0 0 6px; }
+    p { color: #9492a3; font-size: 13.5px; line-height: 1.6; margin: 0 0 24px; }
+    .step { background: #16151d; border: 1px solid #2a2935; border-radius: 12px; padding: 16px 18px; margin-bottom: 12px; }
+    .step-num { display: inline-flex; width: 22px; height: 22px; border-radius: 50%; background: #6d5ef8; color: #fff; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; margin-right: 8px; }
+    .step h3 { display: inline; font-size: 14px; margin: 0; }
+    .step p { margin: 8px 0 10px 30px; color: #9492a3; font-size: 13px; }
+    a.btn { display: inline-block; margin-left: 30px; background: #6d5ef8; color: #fff; text-decoration: none; font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 8px; }
+    a.btn:hover { background: #5b4de3; }
+    code { background: #1d1c26; border: 1px solid #2a2935; border-radius: 6px; padding: 8px 10px; font-size: 12px; display: block; margin: 8px 0 0 30px; overflow-x: auto; white-space: pre; color: #c8c6ff; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="logo-mark">R</div>
+    <h1>Your board is live</h1>
+    <p>Your real feedback board exists now at <b>/b/${escapeHtml(customerSlug)}</b>. Three steps left, all yours to do:</p>
+
+    <div class="step">
+      <span class="step-num">1</span><h3>Set your admin password</h3>
+      <p>No login exists yet for your board - the first visit lets you choose one.</p>
+      <a class="btn" href="/b/${encodeURIComponent(customerSlug)}/admin">Set password &rarr;</a>
+    </div>
+
+    <div class="step">
+      <span class="step-num">2</span><h3>Connect your own tools</h3>
+      <p>Wire up your own Slack, Linear, and/or Notion so submissions and status updates flow into your workspace.</p>
+      <a class="btn" href="/b/${encodeURIComponent(customerSlug)}/connect">Connect tools &rarr;</a>
+    </div>
+
+    <div class="step">
+      <span class="step-num">3</span><h3>Add it to your own site</h3>
+      <p>Drop this one line into your site to get a floating feedback button:</p>
+      <code>&lt;script src="${base}/embed.js" data-customer="${escapeHtml(customerSlug)}"&gt;&lt;/script&gt;</code>
+    </div>
+  </div>
+</body>
+</html>`;
 }
 
 function connectPage(customerSlug, endOrgId, token, setupLinks) {
@@ -518,6 +705,14 @@ function boardPage(customerSlug) {
           <svg class="icon" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.5-1.5"/></svg>
           Connect your tools
         </a>
+        ${
+          customerSlug === "demo"
+            ? `<a class="nav-list" style="display:flex;align-items:center;gap:9px;padding:9px 10px;color:var(--accent);text-decoration:none;font-size:13.5px;font-weight:600;" href="/signup">
+          <svg class="icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Start your own board
+        </a>`
+            : ""
+        }
       </div>
 
       <div class="main">
@@ -1245,6 +1440,51 @@ export default {
       return html(widgetPage(customerSlug));
     }
 
+    if (request.method === "GET" && url.pathname === "/signup") {
+      return html(signupPage(url.searchParams.get("error")));
+    }
+
+    if (request.method === "GET" && url.pathname === "/signup/done") {
+      const customerSlug = url.searchParams.get("slug") || "";
+      if (!customerSlug) {
+        return new Response(null, { status: 302, headers: { Location: "/signup" } });
+      }
+      return html(signupDonePage(customerSlug));
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/signup") {
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ ok: false, error: "invalid JSON body" }, 400);
+      }
+      const name = (body.name || "").trim();
+      if (!name) {
+        return json({ ok: false, error: "Company name is required" }, 400);
+      }
+      const slug = slugify(name);
+      if (slug.length < 3) {
+        return json({ ok: false, error: "That name doesn't make a usable URL - try adding more letters" }, 400);
+      }
+      const existingOrgId = await getTenantOrgId(env, slug);
+      if (existingOrgId) {
+        return json({ ok: false, error: `"${slug}" is already taken - try a different name` }, 409);
+      }
+      try {
+        const org = await createOrg(env, name, slug);
+        await Promise.all(
+          CONNECT_WIDGETS.map((w) =>
+            createInstallationForTenant(env, w.widgetId, org.id, `${slug} - Connect ${w.name}`)
+          )
+        );
+        await callWorkflow(env, SET_CUSTOMER_ORG_WORKFLOW_ID, { customerSlug: slug, orgId: org.id, name });
+        return json({ ok: true, slug });
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
     const boardMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/?$/);
     if (request.method === "GET" && boardMatch) {
       return html(boardPage(boardMatch[1]));
@@ -1331,7 +1571,7 @@ export default {
           headers: { Location: `/b/${encodeURIComponent(customerSlug)}/login` },
         });
       }
-      const endOrgId = TENANT_ORG_IDS[customerSlug];
+      const endOrgId = await getTenantOrgId(env, customerSlug);
       if (!endOrgId) {
         return html(connectUnavailablePage(customerSlug));
       }
