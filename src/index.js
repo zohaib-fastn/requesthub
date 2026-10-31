@@ -4,6 +4,9 @@ const UPDATE_STATUS_WORKFLOW_ID = "wf_b5b1e6e18d9b";
 const VOTE_WORKFLOW_ID = "wf_af7b6c5033db";
 const ADD_COMMENT_WORKFLOW_ID = "wf_fc41a427478e";
 const LIST_COMMENTS_WORKFLOW_ID = "wf_115e3671bb89";
+const GET_CUSTOMER_AUTH_WORKFLOW_ID = "wf_0ec5d57bcc56";
+const SET_CUSTOMER_PASSWORD_WORKFLOW_ID = "wf_1f8a663661bc";
+const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const FASTN_BASE = "https://api.fastn.dev";
 const STATUSES = ["under_review", "planned", "in_progress", "shipped"];
 const DEFAULT_LINEAR_TEAM_ID = "6a0351f8-9f72-49b7-a11a-753726597688";
@@ -68,6 +71,89 @@ function escapeHtml(s) {
     '"': "&quot;",
     "'": "&#39;",
   }[c]));
+}
+
+function toHex(buf) {
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+function fromHex(hex) {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return bytes;
+}
+
+async function hashPassword(password, saltHex) {
+  const salt = saltHex ? fromHex(saltHex) : crypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" }, keyMaterial, 256);
+  return { hash: toHex(bits), salt: toHex(salt) };
+}
+
+function base64UrlEncode(bytes) {
+  let str = btoa(String.fromCharCode(...bytes));
+  return str.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function base64UrlDecode(str) {
+  str = str.replace(/-/g, "+").replace(/_/g, "/");
+  while (str.length % 4) str += "=";
+  const bin = atob(str);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+async function hmacKey(env) {
+  return crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(env.SESSION_SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+}
+
+async function createSessionToken(env, customerSlug) {
+  const payloadBytes = new TextEncoder().encode(JSON.stringify({ slug: customerSlug, exp: Date.now() + SESSION_TTL_MS }));
+  const key = await hmacKey(env);
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, payloadBytes));
+  return `${base64UrlEncode(payloadBytes)}.${base64UrlEncode(sig)}`;
+}
+
+async function verifySessionToken(env, token, customerSlug) {
+  if (!token) return false;
+  const parts = token.split(".");
+  if (parts.length !== 2) return false;
+  try {
+    const payloadBytes = base64UrlDecode(parts[0]);
+    const sigBytes = base64UrlDecode(parts[1]);
+    const key = await hmacKey(env);
+    const expectedSig = new Uint8Array(await crypto.subtle.sign("HMAC", key, payloadBytes));
+    if (expectedSig.length !== sigBytes.length) return false;
+    let diff = 0;
+    for (let i = 0; i < expectedSig.length; i++) diff |= expectedSig[i] ^ sigBytes[i];
+    if (diff !== 0) return false;
+    const payload = JSON.parse(new TextDecoder().decode(payloadBytes));
+    if (payload.slug !== customerSlug) return false;
+    if (!payload.exp || Date.now() > payload.exp) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function sessionCookieName(customerSlug) {
+  return "rh_auth_" + customerSlug.replace(/[^a-z0-9-]/g, "");
+}
+
+function getCookie(request, name) {
+  const header = request.headers.get("cookie") || "";
+  const match = header.match(new RegExp("(?:^|;\\s*)" + name + "=([^;]*)"));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+async function requireAuth(request, env, customerSlug) {
+  const token = getCookie(request, sessionCookieName(customerSlug));
+  return verifySessionToken(env, token, customerSlug);
 }
 
 async function mintEmbedToken(env, endOrgId, customerSlug) {
@@ -176,6 +262,7 @@ function connectPage(customerSlug, endOrgId, token, setupLinks) {
     <div class="logo-mark">R</div>
     <div class="brand">RequestHub</div>
     <a class="back" href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+    <a class="back" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
   </div>
   <div class="page">
     <div class="hero">
@@ -332,17 +419,13 @@ function boardPage(customerSlug) {
     .chip.cat-Bug { background: var(--bad-tint); color: var(--bad); }
     .chip.cat-Feedback { background: var(--good-tint); color: var(--good); }
 
-    .status-select {
-      appearance: none; -webkit-appearance: none; border: none; cursor: pointer; font-family: inherit;
-      font-size: 11px; font-weight: 600; padding: 3px 22px 3px 9px; border-radius: 999px;
-      background-repeat: no-repeat; background-position: right 7px center; background-size: 9px;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239492a3' stroke-width='3'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    .status-chip {
+      font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; text-transform: capitalize;
     }
-    .status-select.under_review { background-color: var(--surface-3); color: var(--text-muted); }
-    .status-select.planned { background-color: var(--info-tint); color: var(--info); }
-    .status-select.in_progress { background-color: var(--warn-tint); color: var(--warn); }
-    .status-select.shipped { background-color: var(--good-tint); color: var(--good); }
-    .status-select option { background: var(--surface); color: var(--text); }
+    .status-chip.under_review { background-color: var(--surface-3); color: var(--text-muted); }
+    .status-chip.planned { background-color: var(--info-tint); color: var(--info); }
+    .status-chip.in_progress { background-color: var(--warn-tint); color: var(--warn); }
+    .status-chip.shipped { background-color: var(--good-tint); color: var(--good); }
 
     .meta-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
     .comment-count { display: inline-flex; align-items: center; gap: 4px; color: var(--text-faint); font-size: 12px; font-weight: 500; background: none; border: none; cursor: pointer; font-family: inherit; padding: 0; }
@@ -519,9 +602,6 @@ function boardPage(customerSlug) {
       const voted = getVotedIds();
 
       list.innerHTML = ideas.map(function (i) {
-        const options = statuses.map(function (s) {
-          return '<option value="' + s + '"' + (s === i.status ? ' selected' : '') + '>' + s.replace('_', ' ') + '</option>';
-        }).join('');
         const hasVoted = voted.indexOf(i.id) !== -1;
         return '<div class="idea">' +
           '<div class="idea-row">' +
@@ -530,7 +610,7 @@ function boardPage(customerSlug) {
           (i.description ? '<div class="idea-desc">' + escapeHtml(i.description) + '</div>' : '') +
           '<div class="meta">' +
           '<span class="chip cat-' + i.category + '">' + (ICONS[i.category] || '') + i.category + '</span>' +
-          '<select class="status-select ' + i.status + '" data-idea-id="' + i.id + '">' + options + '</select>' +
+          '<span class="chip status-chip ' + i.status + '">' + i.status.replace('_', ' ') + '</span>' +
           '<span class="meta-right">' +
           '<button class="comment-count" data-idea-id="' + i.id + '">' + ICONS.comment + '<span class="cc-num">Comments</span></button>' +
           '</span>' +
@@ -553,20 +633,6 @@ function boardPage(customerSlug) {
           '</div>' +
           '</div>';
       }).join('');
-
-      list.querySelectorAll('.status-select').forEach(function (sel) {
-        sel.addEventListener('change', function () {
-          sel.className = 'status-select ' + sel.value;
-          const ideaId = sel.getAttribute('data-idea-id');
-          fetch('/api/ideas/' + ideaId + '/status', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ status: sel.value }),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function () { load(); });
-        });
-      });
 
       list.querySelectorAll('.vote-arrow').forEach(function (btn) {
         btn.addEventListener('click', function () {
@@ -821,6 +887,7 @@ function adminPage(customerSlug) {
     <div class="logo-mark">R</div>
     <div class="brand">RequestHub <span class="org">/ ${escapeHtml(customerSlug)} triage</span></div>
     <a class="back" href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+    <a class="back" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
   </div>
 
   <div class="page">
@@ -929,7 +996,7 @@ function adminPage(customerSlug) {
           fetch('/api/ideas/' + ideaId + '/status', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ status: sel.value }),
+            body: JSON.stringify({ status: sel.value, customerSlug: customerSlug }),
           })
             .then(function (r) { return r.json(); })
             .then(function () { load(); });
@@ -1088,6 +1155,72 @@ function widgetPage(customerSlug) {
 </html>`;
 }
 
+function loginPage(customerSlug, mode, errorMsg, next) {
+  const isSetup = mode === "setup";
+  const nextPath = next || `/b/${encodeURIComponent(customerSlug)}/admin`;
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${isSetup ? "Set admin password" : "Log in"} - RequestHub</title>
+  <style>
+    body { margin: 0; background: #0b0b10; color: #f3f2f7; font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { width: 100%; max-width: 360px; padding: 32px; background: #16151d; border: 1px solid #2a2935; border-radius: 14px; box-sizing: border-box; }
+    h1 { font-size: 18px; margin: 0 0 6px; }
+    p { color: #9492a3; font-size: 13px; margin: 0 0 18px; line-height: 1.5; }
+    input {
+      width: 100%; background: #1d1c26; border: 1px solid #2a2935; color: #f3f2f7; border-radius: 8px;
+      padding: 10px 12px; font-size: 14px; box-sizing: border-box; margin-bottom: 12px; font-family: inherit;
+    }
+    button {
+      width: 100%; background: #6d5ef8; color: #fff; border: none; padding: 11px; border-radius: 8px;
+      font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    button:hover { background: #5b4de3; }
+    .error { color: #f06a6a; font-size: 12.5px; margin: -4px 0 12px; }
+    .back { display: block; text-align: center; margin-top: 16px; color: #9492a3; font-size: 12.5px; text-decoration: none; }
+    .back:hover { color: #fff; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>${isSetup ? "Set your admin password" : "Admin login"}</h1>
+    <p>${
+      isSetup
+        ? `No admin password is set yet for "${escapeHtml(customerSlug)}". Choose one now - whoever knows it can triage ideas and connect your tools.`
+        : `Enter the admin password for "${escapeHtml(customerSlug)}" to continue.`
+    }</p>
+    ${errorMsg ? `<div class="error">${escapeHtml(errorMsg)}</div>` : ""}
+    <form id="form">
+      <input id="password" type="password" placeholder="Password" required minlength="6" autofocus />
+      <button type="submit">${isSetup ? "Set password & continue" : "Log in"}</button>
+    </form>
+    <a class="back" href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+  </div>
+  <script>
+    document.getElementById('form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var password = document.getElementById('password').value;
+      fetch('/api/customers/${encodeURIComponent(customerSlug)}/auth', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ password: password }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.ok) {
+            window.location.href = ${JSON.stringify(nextPath)};
+          } else {
+            window.location.href = '/b/${encodeURIComponent(customerSlug)}/login?error=' + encodeURIComponent(d.error || 'Incorrect password');
+          }
+        });
+    });
+  </script>
+</body>
+</html>`;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -1112,14 +1245,87 @@ export default {
       return html(boardPage(boardMatch[1]));
     }
 
+    const loginMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/login\/?$/);
+    if (request.method === "GET" && loginMatch) {
+      const customerSlug = loginMatch[1];
+      const errorMsg = url.searchParams.get("error");
+      try {
+        const auth = await callWorkflow(env, GET_CUSTOMER_AUTH_WORKFLOW_ID, { customerSlug });
+        const mode = auth?.hash ? "login" : "setup";
+        return html(loginPage(customerSlug, mode, errorMsg));
+      } catch (err) {
+        return html(loginPage(customerSlug, "login", "Could not check auth status - try again."));
+      }
+    }
+
+    const logoutMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/logout\/?$/);
+    if (request.method === "GET" && logoutMatch) {
+      const customerSlug = logoutMatch[1];
+      const res = new Response(null, { status: 302, headers: { Location: `/b/${encodeURIComponent(customerSlug)}` } });
+      res.headers.append("Set-Cookie", `${sessionCookieName(customerSlug)}=; Path=/; Max-Age=0`);
+      return res;
+    }
+
+    const authMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/auth$/);
+    if (request.method === "POST" && authMatch) {
+      const customerSlug = authMatch[1];
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ ok: false, error: "invalid JSON body" }, 400);
+      }
+      const password = (body.password || "").toString();
+      if (password.length < 6) {
+        return json({ ok: false, error: "Password must be at least 6 characters" }, 400);
+      }
+      try {
+        const existing = await callWorkflow(env, GET_CUSTOMER_AUTH_WORKFLOW_ID, { customerSlug });
+        let authenticated;
+        if (!existing?.hash) {
+          const { hash, salt } = await hashPassword(password);
+          await callWorkflow(env, SET_CUSTOMER_PASSWORD_WORKFLOW_ID, { customerSlug, hash, salt });
+          authenticated = true;
+        } else {
+          const { hash } = await hashPassword(password, existing.salt);
+          authenticated = hash === existing.hash;
+        }
+        if (!authenticated) {
+          return json({ ok: false, error: "Incorrect password" }, 401);
+        }
+        const token = await createSessionToken(env, customerSlug);
+        const res = json({ ok: true });
+        res.headers.append(
+          "Set-Cookie",
+          `${sessionCookieName(customerSlug)}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`
+        );
+        return res;
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
     const adminMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/admin\/?$/);
     if (request.method === "GET" && adminMatch) {
-      return html(adminPage(adminMatch[1]));
+      const customerSlug = adminMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: `/b/${encodeURIComponent(customerSlug)}/login` },
+        });
+      }
+      return html(adminPage(customerSlug));
     }
 
     const connectMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/connect\/?$/);
     if (request.method === "GET" && connectMatch) {
       const customerSlug = connectMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: `/b/${encodeURIComponent(customerSlug)}/login` },
+        });
+      }
       const endOrgId = TENANT_ORG_IDS[customerSlug];
       if (!endOrgId) {
         return html(connectUnavailablePage(customerSlug));
@@ -1240,6 +1446,22 @@ export default {
       }
       if (!STATUSES.includes(body.status)) {
         return json({ ok: false, error: "status must be one of " + STATUSES.join(", ") }, 400);
+      }
+      const statusCustomerSlug = (body.customerSlug || "").trim();
+      if (!statusCustomerSlug) {
+        return json({ ok: false, error: "customerSlug is required" }, 400);
+      }
+      if (!(await requireAuth(request, env, statusCustomerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      try {
+        const listData = await callWorkflow(env, LIST_WORKFLOW_ID, { customerSlug: statusCustomerSlug });
+        const belongs = (listData?.ideas || []).some((i) => i.id === Number(statusMatch[1]));
+        if (!belongs) {
+          return json({ ok: false, error: "idea not found for this customer" }, 404);
+        }
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
       }
       try {
         const data = await callWorkflow(env, UPDATE_STATUS_WORKFLOW_ID, {
