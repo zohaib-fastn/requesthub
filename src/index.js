@@ -8,6 +8,14 @@ const GET_CUSTOMER_AUTH_WORKFLOW_ID = "wf_0ec5d57bcc56";
 const SET_CUSTOMER_PASSWORD_WORKFLOW_ID = "wf_1f8a663661bc";
 const GET_CUSTOMER_ORG_WORKFLOW_ID = "wf_c754da22758d";
 const SET_CUSTOMER_ORG_WORKFLOW_ID = "wf_3978c47d84a7";
+const GET_CUSTOMER_PLAN_WORKFLOW_ID = "wf_e5eabbf1cbca";
+const SET_CUSTOMER_PLAN_WORKFLOW_ID = "wf_4ae1ea722645";
+
+const PLANS = [
+  { id: "free", name: "Free", price: "$0", period: "/mo", blurb: "Try RequestHub with your own board.", features: ["1 board", "Unlimited ideas & votes", "Community support"] },
+  { id: "growth", name: "Growth", price: "$29", period: "/mo", blurb: "For a team that's shipping based on feedback.", features: ["Everything in Free", "Connect Slack, Linear & Notion", "Triage dashboard", "Roadmap view"] },
+  { id: "scale", name: "Scale", price: "$99", period: "/mo", blurb: "For teams running this across the whole org.", features: ["Everything in Growth", "Embeddable widget on your site", "Priority support"] },
+];
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const FASTN_BASE = "https://api.fastn.dev";
 const STATUSES = ["under_review", "planned", "in_progress", "shipped"];
@@ -1003,6 +1011,103 @@ function boardPage(customerSlug) {
 </html>`;
 }
 
+function billingPage(customerSlug, currentPlan) {
+  const cards = PLANS.map(function (p) {
+    const isCurrent = p.id === currentPlan;
+    const features = p.features.map((f) => `<li>${escapeHtml(f)}</li>`).join("");
+    return `<div class="plan-card${isCurrent ? " current" : ""}">
+      ${isCurrent ? '<div class="current-badge">Current plan</div>' : ""}
+      <div class="plan-name">${escapeHtml(p.name)}</div>
+      <div class="plan-price">${p.price}<span>${p.period}</span></div>
+      <div class="plan-blurb">${escapeHtml(p.blurb)}</div>
+      <ul class="plan-features">${features}</ul>
+      <button class="plan-btn" data-plan="${p.id}" ${isCurrent ? "disabled" : ""}>${isCurrent ? "Current plan" : "Choose plan"}</button>
+    </div>`;
+  }).join("");
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Billing - RequestHub</title>
+  <style>
+    body { margin: 0; background: #0b0b10; color: #f3f2f7; font-family: -apple-system, sans-serif; }
+    .topbar { background: #16151d; border-bottom: 1px solid #2a2935; padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: #6d5ef8; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+    .brand { font-weight: 700; font-size: 15px; }
+    .brand .org { color: #65636f; font-weight: 500; }
+    .back { margin-left: auto; color: #9492a3; font-size: 13px; text-decoration: none; }
+    .back:hover { color: #fff; }
+    .page { max-width: 920px; margin: 0 auto; padding: 32px 24px; }
+    .hero { margin-bottom: 8px; }
+    .hero h1 { font-size: 21px; margin: 0 0 6px; }
+    .hero p { margin: 0; color: #9492a3; font-size: 13.5px; }
+    .demo-note {
+      background: rgba(232, 165, 61, 0.1); border: 1px solid rgba(232, 165, 61, 0.3); color: #e8a53d;
+      border-radius: 10px; padding: 10px 14px; font-size: 12.5px; margin: 18px 0 24px;
+    }
+    .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    @media (max-width: 760px) { .plans { grid-template-columns: 1fr; } }
+    .plan-card {
+      position: relative; background: #16151d; border: 1px solid #2a2935; border-radius: 14px;
+      padding: 22px 20px; display: flex; flex-direction: column;
+    }
+    .plan-card.current { border-color: #6d5ef8; }
+    .current-badge {
+      position: absolute; top: -10px; left: 20px; background: #6d5ef8; color: #fff; font-size: 10.5px;
+      font-weight: 700; padding: 3px 10px; border-radius: 999px; text-transform: uppercase; letter-spacing: .03em;
+    }
+    .plan-name { font-weight: 700; font-size: 16px; margin-bottom: 6px; }
+    .plan-price { font-size: 26px; font-weight: 700; margin-bottom: 8px; }
+    .plan-price span { font-size: 13px; font-weight: 500; color: #9492a3; }
+    .plan-blurb { color: #9492a3; font-size: 12.5px; margin-bottom: 16px; line-height: 1.4; }
+    .plan-features { list-style: none; padding: 0; margin: 0 0 20px; flex: 1; }
+    .plan-features li { font-size: 13px; color: #c9c7d4; padding: 5px 0 5px 20px; position: relative; }
+    .plan-features li::before { content: "✓"; position: absolute; left: 0; color: #22c58b; font-weight: 700; }
+    .plan-btn {
+      background: #6d5ef8; color: #fff; border: none; padding: 10px; border-radius: 8px; font-size: 13.5px;
+      font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .plan-btn:hover:not(:disabled) { background: #5b4de3; }
+    .plan-btn:disabled { background: #2a2935; color: #65636f; cursor: default; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo-mark">R</div>
+    <div class="brand">RequestHub <span class="org">/ ${escapeHtml(customerSlug)} billing</span></div>
+    <a class="back" href="/b/${encodeURIComponent(customerSlug)}/admin">&larr; Back to triage</a>
+    <a class="back" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
+  </div>
+  <div class="page">
+    <div class="hero">
+      <h1>Billing</h1>
+      <p>Choose the plan that fits your team.</p>
+    </div>
+    <div class="demo-note">This is a demo placeholder - choosing a plan just records your selection. No card is charged, no payment details are collected.</div>
+    <div class="plans">${cards}</div>
+  </div>
+  <script>
+    document.querySelectorAll('.plan-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (btn.disabled) return;
+        btn.disabled = true;
+        btn.textContent = 'Switching...';
+        fetch('/api/customers/${encodeURIComponent(customerSlug)}/plan', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ plan: btn.getAttribute('data-plan') }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function () { window.location.reload(); });
+      });
+    });
+  </script>
+</body>
+</html>`;
+}
+
 function roadmapPage(customerSlug) {
   return `<!doctype html>
 <html>
@@ -1212,6 +1317,7 @@ function adminPage(customerSlug) {
     <div class="logo-mark">R</div>
     <div class="brand">RequestHub <span class="org">/ ${escapeHtml(customerSlug)} triage</span></div>
     <a class="back" href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+    <a class="back" href="/b/${encodeURIComponent(customerSlug)}/billing">Billing</a>
     <a class="back" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
   </div>
 
@@ -1690,6 +1796,43 @@ export default {
         });
       }
       return html(adminPage(customerSlug));
+    }
+
+    const billingMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/billing\/?$/);
+    if (request.method === "GET" && billingMatch) {
+      const customerSlug = billingMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: `/b/${encodeURIComponent(customerSlug)}/login` },
+        });
+      }
+      let currentPlan = "free";
+      try {
+        const data = await callWorkflow(env, GET_CUSTOMER_PLAN_WORKFLOW_ID, { customerSlug });
+        currentPlan = data?.plan || "free";
+      } catch {}
+      return html(billingPage(customerSlug, currentPlan));
+    }
+
+    const planMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/plan$/);
+    if (request.method === "POST" && planMatch) {
+      const customerSlug = planMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ ok: false, error: "invalid JSON body" }, 400);
+      }
+      try {
+        const data = await callWorkflow(env, SET_CUSTOMER_PLAN_WORKFLOW_ID, { customerSlug, plan: body.plan });
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
     }
 
     const connectMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/connect\/?$/);
