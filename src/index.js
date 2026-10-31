@@ -903,6 +903,26 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
         </div>
       </div>
 
+      <div class="card">
+        <h2>Pipeline status names</h2>
+        <p class="hint">Call your four stages whatever makes sense for your team. For the three that have a matching Linear ticket state, pick exactly which state - your internal team can keep other states in between (code review, QA, etc.) that stay invisible to this board.</p>
+        ${["under_review", "planned", "in_progress", "shipped"]
+          .map((key) => {
+            const defaultLabel = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped" }[key];
+            const currentLabel = settings.statusLabels?.[key] || defaultLabel;
+            const needsLinear = key !== "under_review";
+            return `<div class="field">
+          <label>${defaultLabel}</label>
+          <input name="statusLabel_${key}" value="${escapeHtml(currentLabel)}" placeholder="${defaultLabel}" />
+          ${needsLinear
+            ? `<select id="linearState_${key}" name="linearStateId_${key}" data-current="${escapeHtml(settings.linearStateIds?.[key] || "")}" disabled><option>${settings.linearTeamId ? "Loading Linear states..." : "Connect a Linear team above first"}</option></select>
+          <p class="select-note" id="linearStateNote_${key}"></p>`
+            : ""}
+        </div>`;
+          })
+          .join("")}
+      </div>
+
       <button type="submit" class="btn-submit">Save settings</button>
     </form>
 
@@ -990,6 +1010,44 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
     loadPicker('slack', 'slackChannelPicker', 'slackChannelNote', 'slackChannel', ${JSON.stringify(settings.slackChannel || "")});
     loadPicker('linear', 'linearTeamPicker', 'linearTeamNote', 'linearTeamId', ${JSON.stringify(settings.linearTeamId || "")});
     loadPicker('notion', 'notionPagePicker', 'notionPageNote', 'notionPageId', ${JSON.stringify(settings.notionPageId || "")});
+
+    function loadStatePicker(statusKey) {
+      var select = document.getElementById('linearState_' + statusKey);
+      if (!select) return;
+      var note = document.getElementById('linearStateNote_' + statusKey);
+      var currentValue = select.getAttribute('data-current') || '';
+      var teamId = document.getElementById('linearTeamId').value.trim();
+      if (!teamId) {
+        select.innerHTML = '<option value="">Connect a Linear team above first</option>';
+        select.disabled = true;
+        return;
+      }
+      fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/destinations?kind=linear-states&teamId=' + encodeURIComponent(teamId))
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var options = (d && d.ok && d.options) || [];
+          if (!options.length) {
+            select.innerHTML = '<option value="">No states found</option>';
+            select.disabled = true;
+            return;
+          }
+          var html = '<option value="">Not mapped - this status does not sync with Linear</option>';
+          options.forEach(function (o) {
+            var selected = o.id === currentValue ? ' selected' : '';
+            html += '<option value="' + o.id.replace(/"/g, '&quot;') + '"' + selected + '>' + o.label.replace(/</g, '&lt;') + '</option>';
+          });
+          select.innerHTML = html;
+          select.disabled = false;
+          if (note) note.textContent = 'Only this exact state syncs with "' + statusKey.replace('_', ' ') + '" - other states on this team stay internal.';
+        })
+        .catch(function () {
+          select.innerHTML = '<option value="">Could not load Linear states</option>';
+          select.disabled = true;
+        });
+    }
+    loadStatePicker('planned');
+    loadStatePicker('in_progress');
+    loadStatePicker('shipped');
 
     function loadTeam() {
       fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/users')
@@ -1387,6 +1445,7 @@ function boardPage(customerSlug, isOwner) {
     const statuses = ${JSON.stringify(STATUSES)};
     const categories = ["Feature", "Bug", "Feedback"];
     let allIdeas = [];
+    let statusLabels = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped" };
     let activeCategory = "all";
     let activeSort = "votes";
 
@@ -1436,7 +1495,7 @@ function boardPage(customerSlug, isOwner) {
           (i.description ? '<div class="idea-desc">' + escapeHtml(i.description) + '</div>' : '') +
           '<div class="meta">' +
           '<span class="chip cat-' + i.category + '">' + (ICONS[i.category] || '') + i.category + '</span>' +
-          '<span class="chip status-chip ' + i.status + '">' + i.status.replace('_', ' ') + '</span>' +
+          '<span class="chip status-chip ' + i.status + '">' + (statusLabels[i.status] || i.status.replace('_', ' ')) + '</span>' +
           '<span class="meta-right">' +
           '<button class="comment-count" data-idea-id="' + i.id + '">' + ICONS.comment + '<span class="cc-num">Comments</span></button>' +
           '</span>' +
@@ -1578,7 +1637,11 @@ function boardPage(customerSlug, isOwner) {
     function load() {
       fetch('/api/ideas?customer=' + encodeURIComponent(customerSlug))
         .then(function (r) { return r.json(); })
-        .then(function (d) { allIdeas = d.ideas || []; render(); });
+        .then(function (d) {
+          allIdeas = d.ideas || [];
+          if (d.statusLabels) statusLabels = d.statusLabels;
+          render();
+        });
     }
 
     document.getElementById('search').addEventListener('input', render);
@@ -1810,12 +1873,7 @@ function roadmapPage(customerSlug, isOwner) {
 
   <script>
     var customerSlug = ${JSON.stringify(customerSlug)};
-    var COLUMNS = [
-      { key: "under_review", label: "Under Review" },
-      { key: "planned", label: "Planned" },
-      { key: "in_progress", label: "In Progress" },
-      { key: "shipped", label: "Shipped" },
-    ];
+    var DEFAULT_LABELS = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped" };
 
     function escapeHtml(s) {
       var d = document.createElement('div');
@@ -1823,7 +1881,11 @@ function roadmapPage(customerSlug, isOwner) {
       return d.innerHTML;
     }
 
-    function render(ideas) {
+    function render(ideas, statusLabels) {
+      var labels = statusLabels || DEFAULT_LABELS;
+      var COLUMNS = ["under_review", "planned", "in_progress", "shipped"].map(function (key) {
+        return { key: key, label: labels[key] || DEFAULT_LABELS[key] };
+      });
       var board = document.getElementById('board');
       board.innerHTML = COLUMNS.map(function (col) {
         var items = ideas.filter(function (i) { return i.status === col.key; })
@@ -1853,7 +1915,7 @@ function roadmapPage(customerSlug, isOwner) {
 
     fetch('/api/ideas?customer=' + encodeURIComponent(customerSlug))
       .then(function (r) { return r.json(); })
-      .then(function (d) { render(d.ideas || []); });
+      .then(function (d) { render(d.ideas || [], d.statusLabels); });
   </script>
 </body>
 </html>`;
@@ -1969,7 +2031,7 @@ function adminPage(customerSlug, isOwner) {
     let allIdeas = [];
     let activeStatus = "all";
 
-    const STATUS_LABELS = { under_review: "Under review", planned: "Planned", in_progress: "In progress", shipped: "Shipped" };
+    let STATUS_LABELS = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped" };
 
     function escapeHtml(s) {
       const d = document.createElement('div');
@@ -2066,7 +2128,11 @@ function adminPage(customerSlug, isOwner) {
     function load() {
       fetch('/api/ideas?customer=' + encodeURIComponent(customerSlug))
         .then(function (r) { return r.json(); })
-        .then(function (d) { allIdeas = d.ideas || []; render(); });
+        .then(function (d) {
+          allIdeas = d.ideas || [];
+          if (d.statusLabels) STATUS_LABELS = d.statusLabels;
+          render();
+        });
     }
 
     load();
@@ -2912,6 +2978,8 @@ export default {
       let slackChannel = "";
       let linearTeamId = "";
       let notionPageId = "";
+      let statusLabels = {};
+      let linearStateIds = {};
       if (contentType.includes("application/json")) {
         let body;
         try {
@@ -2922,11 +2990,24 @@ export default {
         slackChannel = body.slackChannel || "";
         linearTeamId = body.linearTeamId || "";
         notionPageId = body.notionPageId || "";
+        statusLabels = body.statusLabels || {};
+        linearStateIds = body.linearStateIds || {};
       } else {
         const form = await request.formData();
         slackChannel = form.get("slackChannel") || "";
         linearTeamId = form.get("linearTeamId") || "";
         notionPageId = form.get("notionPageId") || "";
+        statusLabels = {
+          under_review: form.get("statusLabel_under_review") || "",
+          planned: form.get("statusLabel_planned") || "",
+          in_progress: form.get("statusLabel_in_progress") || "",
+          shipped: form.get("statusLabel_shipped") || "",
+        };
+        linearStateIds = {
+          planned: form.get("linearStateId_planned") || "",
+          in_progress: form.get("linearStateId_in_progress") || "",
+          shipped: form.get("linearStateId_shipped") || "",
+        };
       }
       try {
         await callWorkflow(env, SET_CUSTOMER_SETTINGS_WORKFLOW_ID, {
@@ -2934,6 +3015,8 @@ export default {
           slackChannel,
           linearTeamId,
           notionPageId,
+          statusLabels,
+          linearStateIds,
         });
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
@@ -2954,15 +3037,16 @@ export default {
         return json({ ok: false, error: "unauthorized" }, 401);
       }
       const kind = url.searchParams.get("kind");
-      if (!["slack", "linear", "notion"].includes(kind)) {
-        return json({ ok: false, error: "kind must be one of slack, linear, notion" }, 400);
+      if (!["slack", "linear", "notion", "linear-states"].includes(kind)) {
+        return json({ ok: false, error: "kind must be one of slack, linear, notion, linear-states" }, 400);
       }
       const endOrgId = await getTenantOrgId(env, customerSlug);
       if (!endOrgId) {
         return json({ ok: false, error: "no connected workspace for this customer yet" }, 404);
       }
       try {
-        const data = await callWorkflow(env, LIST_DESTINATIONS_WORKFLOW_ID, { kind }, endOrgId);
+        const input = kind === "linear-states" ? { kind, teamId: url.searchParams.get("teamId") || "" } : { kind };
+        const data = await callWorkflow(env, LIST_DESTINATIONS_WORKFLOW_ID, input, endOrgId);
         return json(data);
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
@@ -3050,8 +3134,25 @@ export default {
       if (payload.type !== "Issue" || !payload.data?.id) {
         return json({ ok: true, skipped: "not an issue event" });
       }
+
+      let settings = {};
+      try {
+        settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug });
+      } catch {}
+
+      // The customer's exact per-status state pick (Settings) is authoritative
+      // when configured - a team's other same-type states (its own internal
+      // in-between steps) are then invisible to RequestHub entirely. Only
+      // falls back to "any state of this type" for customers who haven't
+      // configured pickers yet.
+      const incomingStateId = payload.data?.state?.id;
+      const stateIdToStatus = {};
+      for (const status of ["planned", "in_progress", "shipped"]) {
+        const id = settings?.linearStateIds?.[status];
+        if (id) stateIdToStatus[id] = status;
+      }
       const stateType = payload.data?.state?.type;
-      const mappedStatus = LINEAR_STATE_TYPE_TO_STATUS[stateType];
+      const mappedStatus = stateIdToStatus[incomingStateId] || LINEAR_STATE_TYPE_TO_STATUS[stateType];
       if (!mappedStatus) {
         return json({ ok: true, skipped: "no forward status mapping for state type " + stateType });
       }
@@ -3069,10 +3170,6 @@ export default {
         }
 
         const endOrgId = await getTenantOrgId(env, customerSlug);
-        let settings = {};
-        try {
-          settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug });
-        } catch {}
         const data = await callWorkflow(
           env,
           UPDATE_STATUS_WORKFLOW_ID,
@@ -3106,7 +3203,12 @@ export default {
         if (categoryFilter) {
           ideas = ideas.filter(function (i) { return i.category === categoryFilter; });
         }
-        return json({ ...data, ideas });
+        let statusLabels = null;
+        try {
+          const settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug });
+          statusLabels = settings?.statusLabels || null;
+        } catch {}
+        return json({ ...data, ideas, statusLabels });
       } catch (err) {
         return json({ ok: false, error: err.message, ideas: [] }, 502);
       }
@@ -3235,6 +3337,7 @@ export default {
             status: body.status,
             linearTeamId: body.linearTeamId || settings?.linearTeamId || DEFAULT_LINEAR_TEAM_ID,
             notionPageId: body.notionPageId || settings?.notionPageId || DEFAULT_NOTION_PAGE_ID,
+            linearStateIds: settings?.linearStateIds || {},
           },
           endOrgId
         );
