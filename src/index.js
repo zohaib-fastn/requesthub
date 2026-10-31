@@ -1432,6 +1432,10 @@ function boardPage(customerSlug, isOwner) {
       border-radius: 9px; padding: 8px 12px; font-size: 13px; font-family: inherit; flex: 1; min-width: 140px;
     }
     .filters-row input::placeholder { color: var(--text-faint); }
+    .filters-row select {
+      background: var(--card); border: 1px solid var(--border); color: var(--text);
+      border-radius: 9px; padding: 8px 12px; font-size: 13px; font-family: inherit; cursor: pointer; flex-shrink: 0;
+    }
 
     .empty { color: var(--text-faint); font-size: 13.5px; text-align: center; padding: 40px 16px; }
 
@@ -1604,6 +1608,7 @@ function boardPage(customerSlug, isOwner) {
             <button class="filter-tab" data-sort="votes">Most voted</button>
             <button class="filter-tab" data-sort="new">Newest</button>
           </div>
+          <select id="statusFilter"><option value="all">All statuses</option></select>
           <input id="search" placeholder="Search feedback..." />
         </div>
 
@@ -1694,9 +1699,12 @@ function boardPage(customerSlug, isOwner) {
       const list = document.getElementById('list');
       const q = (document.getElementById('search').value || '').toLowerCase();
       const sort = activeSort;
+      const statusFilterEl = document.getElementById('statusFilter');
+      const status = statusFilterEl ? statusFilterEl.value : 'all';
 
       let ideas = allIdeas.filter(function (i) {
         if (activeCategory !== 'all' && i.category !== activeCategory) return false;
+        if (status !== 'all' && i.status !== status) return false;
         if (q && i.title.toLowerCase().indexOf(q) === -1 && (i.description || '').toLowerCase().indexOf(q) === -1) return false;
         return true;
       });
@@ -1874,6 +1882,15 @@ function boardPage(customerSlug, isOwner) {
       if (categories.indexOf(current) !== -1) sel.value = current;
     }
 
+    function populateStatusFilter() {
+      const sel = document.getElementById('statusFilter');
+      if (!sel) return;
+      const current = sel.value;
+      sel.innerHTML = '<option value="all">All statuses</option>' +
+        statuses.map(function (s) { return '<option value="' + s + '">' + escapeHtml(statusLabels[s] || s) + '</option>'; }).join('');
+      sel.value = current || 'all';
+    }
+
     function load() {
       fetch('/api/ideas?customer=' + encodeURIComponent(customerSlug))
         .then(function (r) { return r.json(); })
@@ -1882,11 +1899,13 @@ function boardPage(customerSlug, isOwner) {
           if (d.statusLabels) statusLabels = d.statusLabels;
           if (d.categories && d.categories.length) categories = d.categories;
           populateCategorySelect();
+          populateStatusFilter();
           render();
         });
     }
 
     document.getElementById('search').addEventListener('input', render);
+    document.getElementById('statusFilter').addEventListener('change', render);
 
     document.querySelectorAll('.filter-tab').forEach(function (btn) {
       btn.addEventListener('click', function () {
