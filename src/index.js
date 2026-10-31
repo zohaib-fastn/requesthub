@@ -648,7 +648,7 @@ function signupDonePage(customerSlug) {
 </html>`;
 }
 
-function connectPage(customerSlug, endOrgId, token, setupLinks) {
+function connectPage(customerSlug, endOrgId, token, setupLinks, isOwner) {
   const cards = CONNECT_WIDGETS.map(function (w) {
     const link = setupLinks[w.slug];
     const initial = w.name.charAt(0);
@@ -678,8 +678,11 @@ function connectPage(customerSlug, endOrgId, token, setupLinks) {
     .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
     .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
     .brand { font-weight: 700; font-size: 15px; }
-    .back { margin-left: auto; color: var(--text-muted); font-size: 13px; text-decoration: none; }
-    .back:hover { color: var(--text); }
+    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 18px; }
+    .nav-right a { color: var(--text-muted); font-size: 13px; text-decoration: none; }
+    .nav-right a:hover { color: var(--text); }
+    .nav-right a.logout { color: var(--bad); }
+    .nav-right a.owner-link { color: var(--accent); font-weight: 600; }
     .page { max-width: 760px; margin: 0 auto; padding: 24px; }
     .hero { margin-bottom: 20px; }
     .hero h1 { font-size: 19px; margin: 0 0 4px; }
@@ -715,9 +718,12 @@ function connectPage(customerSlug, endOrgId, token, setupLinks) {
   <div class="topbar">
     <div class="logo-mark">R</div>
     <div class="brand">RequestHub</div>
-    <a class="back" href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
-    <a class="back" href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
-    <a class="back" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
+    <nav class="nav-right">
+      ${isOwner ? `<a class="owner-link" href="/owner">&larr; Owner console</a>` : ""}
+      <a href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+      <a href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
+      <a class="logout" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
+    </nav>
   </div>
   <div class="page">
     <div class="hero">
@@ -736,7 +742,7 @@ function connectPage(customerSlug, endOrgId, token, setupLinks) {
 </html>`;
 }
 
-function settingsPage(customerSlug, settings, saved) {
+function settingsPage(customerSlug, settings, saved, isOwner) {
   return `<!doctype html>
 <html>
 <head>
@@ -749,8 +755,11 @@ function settingsPage(customerSlug, settings, saved) {
     .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
     .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
     .brand { font-weight: 700; font-size: 15px; }
-    .back { margin-left: auto; color: var(--text-muted); font-size: 13px; text-decoration: none; }
-    .back:hover { color: var(--text); }
+    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 18px; }
+    .nav-right a { color: var(--text-muted); font-size: 13px; text-decoration: none; }
+    .nav-right a:hover { color: var(--text); }
+    .nav-right a.logout { color: var(--bad); }
+    .nav-right a.owner-link { color: var(--accent); font-weight: 600; }
     .page { max-width: 640px; margin: 0 auto; padding: 24px; }
     .hero { margin-bottom: 20px; }
     .hero h1 { font-size: 19px; margin: 0 0 4px; }
@@ -784,8 +793,11 @@ function settingsPage(customerSlug, settings, saved) {
   <div class="topbar">
     <div class="logo-mark">R</div>
     <div class="brand">RequestHub</div>
-    <a class="back" href="/b/${encodeURIComponent(customerSlug)}/admin">&larr; Back to triage</a>
-    <a class="back" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
+    <nav class="nav-right">
+      ${isOwner ? `<a class="owner-link" href="/owner">&larr; Owner console</a>` : ""}
+      <a href="/b/${encodeURIComponent(customerSlug)}/admin">&larr; Back to triage</a>
+      <a class="logout" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
+    </nav>
   </div>
   <div class="page">
     <div class="hero">
@@ -879,7 +891,7 @@ function settingsPage(customerSlug, settings, saved) {
 </html>`;
 }
 
-function connectUnavailablePage(customerSlug) {
+function connectUnavailablePage(customerSlug, isOwner) {
   return `<!doctype html>
 <html>
 <head>
@@ -900,12 +912,13 @@ function connectUnavailablePage(customerSlug) {
     <h1>No connected workspace yet</h1>
     <p>"${escapeHtml(customerSlug)}" isn't set up as a tenant with connectable tools yet.</p>
     <a href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+    ${isOwner ? `<br/><a href="/owner">&larr; Owner console</a>` : ""}
   </div>
 </body>
 </html>`;
 }
 
-function boardPage(customerSlug) {
+function boardPage(customerSlug, isOwner) {
   const favicon =
     "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23625afa'/%3E%3Cpath d='M9 22V10h7.2c2.9 0 4.8 1.7 4.8 4.3 0 1.9-1 3.3-2.7 3.9L22 22h-3.3l-3.2-3.4H12V22H9zm3-5.8h4c1.4 0 2.2-.7 2.2-1.9 0-1.2-.8-1.8-2.2-1.8h-4v3.7z' fill='white'/%3E%3C/svg%3E";
   return `<!doctype html>
@@ -941,6 +954,7 @@ function boardPage(customerSlug) {
     .nav-search::placeholder { color: var(--text-faint); }
     .nav-admin-link { color: var(--text-muted); text-decoration: none; font-size: 13px; font-weight: 600; }
     .nav-admin-link:hover { color: var(--text); }
+    .nav-admin-link.owner-link { color: var(--accent); }
 
     .page { max-width: 980px; margin: 0 auto; padding: 24px 24px 80px; }
     .board-layout { display: grid; grid-template-columns: 1fr 240px; gap: 24px; align-items: start; }
@@ -1093,6 +1107,7 @@ function boardPage(customerSlug) {
     <a class="top-tab active" href="/b/${encodeURIComponent(customerSlug)}">Feedback</a>
     <a class="top-tab" href="/b/${encodeURIComponent(customerSlug)}/roadmap">Roadmap</a>
     <div class="nav-right">
+      ${isOwner ? `<a class="nav-admin-link owner-link" href="/owner">&larr; Owner console</a>` : ""}
       <a class="nav-admin-link" href="/b/${encodeURIComponent(customerSlug)}/admin">Admin</a>
     </div>
   </div>
@@ -1433,7 +1448,7 @@ function boardPage(customerSlug) {
 </html>`;
 }
 
-function billingPage(customerSlug, currentPlan) {
+function billingPage(customerSlug, currentPlan, isOwner) {
   const cards = PLANS.map(function (p) {
     const isCurrent = p.id === currentPlan;
     const features = p.features.map((f) => `<li>${escapeHtml(f)}</li>`).join("");
@@ -1460,8 +1475,11 @@ function billingPage(customerSlug, currentPlan) {
     .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
     .brand { font-weight: 700; font-size: 15px; }
     .brand .org { color: var(--text-faint); font-weight: 500; }
-    .back { margin-left: auto; color: var(--text-muted); font-size: 13px; text-decoration: none; }
-    .back:hover { color: var(--text); }
+    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 18px; }
+    .nav-right a { color: var(--text-muted); font-size: 13px; text-decoration: none; }
+    .nav-right a:hover { color: var(--text); }
+    .nav-right a.logout { color: var(--bad); }
+    .nav-right a.owner-link { color: var(--accent); font-weight: 600; }
     .page { max-width: 920px; margin: 0 auto; padding: 32px 24px; }
     .hero { margin-bottom: 8px; }
     .hero h1 { font-size: 21px; margin: 0 0 6px; }
@@ -1500,8 +1518,11 @@ function billingPage(customerSlug, currentPlan) {
   <div class="topbar">
     <div class="logo-mark">R</div>
     <div class="brand">RequestHub <span class="org">/ ${escapeHtml(customerSlug)} billing</span></div>
-    <a class="back" href="/b/${encodeURIComponent(customerSlug)}/admin">&larr; Back to triage</a>
-    <a class="back" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
+    <nav class="nav-right">
+      ${isOwner ? `<a class="owner-link" href="/owner">&larr; Owner console</a>` : ""}
+      <a href="/b/${encodeURIComponent(customerSlug)}/admin">&larr; Back to triage</a>
+      <a class="logout" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
+    </nav>
   </div>
   <div class="page">
     <div class="hero">
@@ -1531,7 +1552,7 @@ function billingPage(customerSlug, currentPlan) {
 </html>`;
 }
 
-function roadmapPage(customerSlug) {
+function roadmapPage(customerSlug, isOwner) {
   return `<!doctype html>
 <html>
 <head>
@@ -1550,9 +1571,10 @@ function roadmapPage(customerSlug) {
     .top-tab { color: var(--text-muted); text-decoration: none; font-size: 13.5px; font-weight: 600; padding: 8px 12px; border-radius: 8px; }
     .top-tab:hover { color: var(--text); background: var(--surface-2); }
     .top-tab.active { color: var(--accent); background: var(--accent-tint); }
-    .nav-right { margin-left: auto; }
+    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
     .nav-admin-link { color: var(--text-muted); text-decoration: none; font-size: 13px; font-weight: 600; }
     .nav-admin-link:hover { color: var(--text); }
+    .nav-admin-link.owner-link { color: var(--accent); }
 
     .page { max-width: 1100px; margin: 0 auto; padding: 24px; }
     .page-title { font-size: 20px; font-weight: 700; margin: 0 0 18px; }
@@ -1595,6 +1617,7 @@ function roadmapPage(customerSlug) {
     <a class="top-tab" href="/b/${encodeURIComponent(customerSlug)}">Feedback</a>
     <a class="top-tab active" href="/b/${encodeURIComponent(customerSlug)}/roadmap">Roadmap</a>
     <div class="nav-right">
+      ${isOwner ? `<a class="nav-admin-link owner-link" href="/owner">&larr; Owner console</a>` : ""}
       <a class="nav-admin-link" href="/b/${encodeURIComponent(customerSlug)}/admin">Admin</a>
     </div>
   </div>
@@ -1655,7 +1678,7 @@ function roadmapPage(customerSlug) {
 </html>`;
 }
 
-function adminPage(customerSlug) {
+function adminPage(customerSlug, isOwner) {
   return `<!doctype html>
 <html>
 <head>
@@ -1669,8 +1692,11 @@ function adminPage(customerSlug) {
     .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
     .brand { font-weight: 700; font-size: 15px; }
     .brand .org { color: var(--text-faint); font-weight: 500; }
-    .back { margin-left: auto; color: var(--text-muted); font-size: 13px; text-decoration: none; }
-    .back:hover { color: var(--text); }
+    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 16px; }
+    .nav-right a { color: var(--text-muted); font-size: 13px; text-decoration: none; }
+    .nav-right a:hover { color: var(--text); }
+    .nav-right a.logout { color: var(--bad); }
+    .nav-right a.owner-link { color: var(--accent); font-weight: 600; }
 
     .page { max-width: 1040px; margin: 0 auto; padding: 24px; }
 
@@ -1729,10 +1755,13 @@ function adminPage(customerSlug) {
   <div class="topbar">
     <div class="logo-mark">R</div>
     <div class="brand">RequestHub <span class="org">/ ${escapeHtml(customerSlug)} triage</span></div>
-    <a class="back" href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
-    <a class="back" href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
-    <a class="back" href="/b/${encodeURIComponent(customerSlug)}/billing">Billing</a>
-    <a class="back" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
+    <nav class="nav-right">
+      ${isOwner ? `<a class="owner-link" href="/owner">&larr; Owner console</a>` : ""}
+      <a href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+      <a href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
+      <a href="/b/${encodeURIComponent(customerSlug)}/billing">Billing</a>
+      <a class="logout" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
+    </nav>
   </div>
 
   <div class="page">
@@ -2000,7 +2029,7 @@ function widgetPage(customerSlug) {
 </html>`;
 }
 
-function loginPage(customerSlug, mode, errorMsg, next) {
+function loginPage(customerSlug, mode, errorMsg, next, isOwner) {
   const isSetup = mode === "setup";
   const nextPath = next || `/b/${encodeURIComponent(customerSlug)}/admin`;
   return `<!doctype html>
@@ -2044,6 +2073,7 @@ function loginPage(customerSlug, mode, errorMsg, next) {
       <button type="submit">${isSetup ? "Set password & continue" : "Log in"}</button>
     </form>
     <a class="back" href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+    ${isOwner ? `<a class="back" href="/owner">&larr; Owner console</a>` : ""}
   </div>
   <script>
     document.getElementById('form').addEventListener('submit', function (e) {
@@ -2360,19 +2390,21 @@ export default {
 
     const boardMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/?$/);
     if (request.method === "GET" && boardMatch) {
-      return html(boardPage(boardMatch[1]));
+      const isOwner = await requireAuth(request, env, OWNER_SLUG);
+      return html(boardPage(boardMatch[1], isOwner));
     }
 
     const loginMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/login\/?$/);
     if (request.method === "GET" && loginMatch) {
       const customerSlug = loginMatch[1];
       const errorMsg = url.searchParams.get("error");
+      const isOwner = await requireAuth(request, env, OWNER_SLUG);
       try {
         const auth = await callWorkflow(env, GET_CUSTOMER_AUTH_WORKFLOW_ID, { customerSlug });
         const mode = auth?.hash ? "login" : "setup";
-        return html(loginPage(customerSlug, mode, errorMsg));
+        return html(loginPage(customerSlug, mode, errorMsg, null, isOwner));
       } catch (err) {
-        return html(loginPage(customerSlug, "login", "Could not check auth status - try again."));
+        return html(loginPage(customerSlug, "login", "Could not check auth status - try again.", null, isOwner));
       }
     }
 
@@ -2425,24 +2457,27 @@ export default {
 
     const roadmapMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/roadmap\/?$/);
     if (request.method === "GET" && roadmapMatch) {
-      return html(roadmapPage(roadmapMatch[1]));
+      const isOwner = await requireAuth(request, env, OWNER_SLUG);
+      return html(roadmapPage(roadmapMatch[1], isOwner));
     }
 
     const adminMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/admin\/?$/);
     if (request.method === "GET" && adminMatch) {
       const customerSlug = adminMatch[1];
+      const isOwner = await requireAuth(request, env, OWNER_SLUG);
       if (!(await requireAuth(request, env, customerSlug))) {
         return new Response(null, {
           status: 302,
           headers: { Location: `/b/${encodeURIComponent(customerSlug)}/login` },
         });
       }
-      return html(adminPage(customerSlug));
+      return html(adminPage(customerSlug, isOwner));
     }
 
     const billingMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/billing\/?$/);
     if (request.method === "GET" && billingMatch) {
       const customerSlug = billingMatch[1];
+      const isOwner = await requireAuth(request, env, OWNER_SLUG);
       if (!(await requireAuth(request, env, customerSlug))) {
         return new Response(null, {
           status: 302,
@@ -2454,7 +2489,7 @@ export default {
         const data = await callWorkflow(env, GET_CUSTOMER_PLAN_WORKFLOW_ID, { customerSlug });
         currentPlan = data?.plan || "free";
       } catch {}
-      return html(billingPage(customerSlug, currentPlan));
+      return html(billingPage(customerSlug, currentPlan, isOwner));
     }
 
     const planMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/plan$/);
@@ -2480,6 +2515,7 @@ export default {
     const connectMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/connect\/?$/);
     if (request.method === "GET" && connectMatch) {
       const customerSlug = connectMatch[1];
+      const isOwner = await requireAuth(request, env, OWNER_SLUG);
       if (!(await requireAuth(request, env, customerSlug))) {
         return new Response(null, {
           status: 302,
@@ -2488,7 +2524,7 @@ export default {
       }
       const endOrgId = await getTenantOrgId(env, customerSlug);
       if (!endOrgId) {
-        return html(connectUnavailablePage(customerSlug));
+        return html(connectUnavailablePage(customerSlug, isOwner));
       }
       try {
         const token = await mintEmbedToken(env, endOrgId, customerSlug);
@@ -2502,15 +2538,16 @@ export default {
           const r = linkResults[i];
           setupLinks[w.slug] = r.status === "fulfilled" ? r.value : null;
         });
-        return html(connectPage(customerSlug, endOrgId, token, setupLinks));
+        return html(connectPage(customerSlug, endOrgId, token, setupLinks, isOwner));
       } catch (err) {
-        return html(connectUnavailablePage(customerSlug));
+        return html(connectUnavailablePage(customerSlug, isOwner));
       }
     }
 
     const settingsMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/settings\/?$/);
     if (request.method === "GET" && settingsMatch) {
       const customerSlug = settingsMatch[1];
+      const isOwner = await requireAuth(request, env, OWNER_SLUG);
       if (!(await requireAuth(request, env, customerSlug))) {
         return new Response(null, {
           status: 302,
@@ -2521,7 +2558,7 @@ export default {
       try {
         settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug });
       } catch {}
-      return html(settingsPage(customerSlug, settings || {}, url.searchParams.get("saved") === "1"));
+      return html(settingsPage(customerSlug, settings || {}, url.searchParams.get("saved") === "1", isOwner));
     }
 
     const settingsSaveMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/settings$/);
