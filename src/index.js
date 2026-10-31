@@ -423,6 +423,10 @@ function boardPage(customerSlug) {
       <div class="sidebar">
         <button class="btn-add" id="openFormBtn">+ Add feedback</button>
         <div class="nav-list" id="categoryNav"></div>
+        <a class="nav-list" style="display:flex;align-items:center;gap:9px;padding:9px 10px;color:var(--text-muted);text-decoration:none;font-size:13.5px;font-weight:500;" href="/b/${encodeURIComponent(customerSlug)}/admin">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          Triage dashboard
+        </a>
         <a class="nav-list" style="display:flex;align-items:center;gap:9px;padding:9px 10px;color:var(--text-muted);text-decoration:none;font-size:13.5px;font-weight:500;" href="/b/${encodeURIComponent(customerSlug)}/connect">
           <svg class="icon" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.5-1.5"/></svg>
           Connect your tools
@@ -729,6 +733,226 @@ function boardPage(customerSlug) {
 </html>`;
 }
 
+function adminPage(customerSlug) {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Triage - RequestHub</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+  <style>
+    :root {
+      --bg: #0b0b10; --surface: #16151d; --surface-2: #1d1c26; --surface-3: #252430;
+      --border: #2a2935; --text: #f3f2f7; --text-muted: #9492a3; --text-faint: #65636f;
+      --accent: #6d5ef8; --accent-hover: #5b4de3; --accent-tint: rgba(109, 94, 248, 0.16);
+      --good: #22c58b; --good-tint: rgba(34, 197, 139, 0.14);
+      --warn: #e8a53d; --warn-tint: rgba(232, 165, 61, 0.14);
+      --bad: #f06a6a; --bad-tint: rgba(240, 106, 106, 0.14);
+      --info: #4ea8f0; --info-tint: rgba(78, 168, 240, 0.14);
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: "Inter", -apple-system, sans-serif; font-size: 14px; line-height: 1.5; }
+    .icon { width: 14px; height: 14px; display: inline-block; vertical-align: -2px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+    .topbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+    .brand { font-weight: 700; font-size: 15px; }
+    .brand .org { color: var(--text-faint); font-weight: 500; }
+    .back { margin-left: auto; color: var(--text-muted); font-size: 13px; text-decoration: none; }
+    .back:hover { color: var(--text); }
+
+    .page { max-width: 1040px; margin: 0 auto; padding: 24px; }
+
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 14px 16px; cursor: pointer; text-align: left; font-family: inherit;
+    }
+    .stat-card.active { border-color: var(--accent); background: var(--accent-tint); }
+    .stat-count { font-size: 22px; font-weight: 700; font-family: "IBM Plex Mono", monospace; }
+    .stat-label { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+    .stat-card.active .stat-label { color: var(--accent); }
+
+    .filters-row { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .filters-row input, .filters-row select {
+      background: var(--surface); border: 1px solid var(--border); color: var(--text);
+      border-radius: 9px; padding: 9px 12px; font-size: 13px; font-family: inherit;
+    }
+    .filters-row input { flex: 1; min-width: 160px; }
+    .filters-row input::placeholder { color: var(--text-faint); }
+    .filters-row select { cursor: pointer; }
+
+    .empty { color: var(--text-faint); font-size: 13.5px; text-align: center; padding: 40px 16px; }
+
+    .row { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 13px 16px; margin-bottom: 8px; display: flex; gap: 14px; align-items: flex-start; }
+    .row-body { flex: 1; min-width: 0; }
+    .row-title { font-weight: 600; font-size: 14px; }
+    .row-desc { color: var(--text-muted); font-size: 12.5px; margin-top: 2px; }
+    .row-meta { margin-top: 8px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+    .chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-weight: 600; font-size: 11px; }
+    .chip.cat-Feature { background: var(--accent-tint); color: var(--accent); }
+    .chip.cat-Bug { background: var(--bad-tint); color: var(--bad); }
+    .chip.cat-Feedback { background: var(--good-tint); color: var(--good); }
+    .chip.badge { background: var(--surface-3); color: var(--text-muted); text-decoration: none; }
+    .chip.badge:hover { color: var(--text); }
+
+    .status-select {
+      appearance: none; -webkit-appearance: none; border: none; cursor: pointer; font-family: inherit;
+      font-size: 11px; font-weight: 600; padding: 3px 22px 3px 9px; border-radius: 999px;
+      background-repeat: no-repeat; background-position: right 7px center; background-size: 9px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239492a3' stroke-width='3'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    }
+    .status-select.under_review { background-color: var(--surface-3); color: var(--text-muted); }
+    .status-select.planned { background-color: var(--info-tint); color: var(--info); }
+    .status-select.in_progress { background-color: var(--warn-tint); color: var(--warn); }
+    .status-select.shipped { background-color: var(--good-tint); color: var(--good); }
+    .status-select option { background: var(--surface); color: var(--text); }
+
+    .row-right { flex-shrink: 0; text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+    .row-votes { font-size: 15px; font-weight: 700; font-family: "IBM Plex Mono", monospace; }
+    .row-date { color: var(--text-faint); font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo-mark">R</div>
+    <div class="brand">RequestHub <span class="org">/ ${escapeHtml(customerSlug)} triage</span></div>
+    <a class="back" href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+  </div>
+
+  <div class="page">
+    <div class="stats" id="stats"></div>
+    <div class="filters-row">
+      <input id="search" placeholder="Search feedback..." />
+      <select id="category">
+        <option value="all">All categories</option>
+        <option value="Feature">Feature</option>
+        <option value="Bug">Bug</option>
+        <option value="Feedback">Feedback</option>
+      </select>
+      <select id="sort">
+        <option value="new">Newest</option>
+        <option value="votes">Most voted</option>
+      </select>
+    </div>
+    <div id="list"><div class="empty">Loading...</div></div>
+  </div>
+
+  <script>
+    const customerSlug = ${JSON.stringify(customerSlug)};
+    const statuses = ${JSON.stringify(STATUSES)};
+    let allIdeas = [];
+    let activeStatus = "all";
+
+    const STATUS_LABELS = { under_review: "Under review", planned: "Planned", in_progress: "In progress", shipped: "Shipped" };
+
+    function escapeHtml(s) {
+      const d = document.createElement('div');
+      d.innerText = s || '';
+      return d.innerHTML;
+    }
+
+    function renderStats() {
+      const el = document.getElementById('stats');
+      const cards = [{ key: 'all', label: 'All' }].concat(
+        statuses.map(function (s) { return { key: s, label: STATUS_LABELS[s] }; })
+      );
+      el.innerHTML = cards.map(function (c) {
+        const count = c.key === 'all' ? allIdeas.length : allIdeas.filter(function (i) { return i.status === c.key; }).length;
+        return '<button class="stat-card' + (activeStatus === c.key ? ' active' : '') + '" data-status="' + c.key + '">' +
+          '<div class="stat-count">' + count + '</div><div class="stat-label">' + c.label + '</div></button>';
+      }).join('');
+      el.querySelectorAll('.stat-card').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          activeStatus = btn.getAttribute('data-status');
+          render();
+        });
+      });
+    }
+
+    function render() {
+      renderStats();
+      const list = document.getElementById('list');
+      const q = (document.getElementById('search').value || '').toLowerCase();
+      const category = document.getElementById('category').value;
+      const sort = document.getElementById('sort').value;
+
+      let ideas = allIdeas.filter(function (i) {
+        if (activeStatus !== 'all' && i.status !== activeStatus) return false;
+        if (category !== 'all' && i.category !== category) return false;
+        if (q && i.title.toLowerCase().indexOf(q) === -1 && (i.description || '').toLowerCase().indexOf(q) === -1) return false;
+        return true;
+      });
+      ideas = ideas.slice().sort(function (a, b) {
+        if (sort === 'votes') return b.votes - a.votes;
+        return new Date(b.created_at) - new Date(a.created_at);
+      });
+
+      if (!ideas.length) {
+        list.innerHTML = '<div class="empty">Nothing matches these filters.</div>';
+        return;
+      }
+
+      list.innerHTML = ideas.map(function (i) {
+        const options = statuses.map(function (s) {
+          return '<option value="' + s + '"' + (s === i.status ? ' selected' : '') + '>' + STATUS_LABELS[s] + '</option>';
+        }).join('');
+        const badges = [];
+        if (i.submitter_email) badges.push('<span class="chip badge">' + escapeHtml(i.submitter_email) + '</span>');
+        if (i.linear_issue_url) badges.push('<a class="chip badge" href="' + i.linear_issue_url + '" target="_blank" rel="noopener">Linear ticket &#8599;</a>');
+        if (i.notion_archived_at) badges.push('<span class="chip badge">Archived to Notion</span>');
+        const date = i.created_at ? new Date(i.created_at).toLocaleDateString() : '';
+        return '<div class="row">' +
+          '<div class="row-body">' +
+          '<div class="row-title">' + escapeHtml(i.title) + '</div>' +
+          (i.description ? '<div class="row-desc">' + escapeHtml(i.description) + '</div>' : '') +
+          '<div class="row-meta">' +
+          '<span class="chip cat-' + i.category + '">' + i.category + '</span>' +
+          '<select class="status-select ' + i.status + '" data-idea-id="' + i.id + '">' + options + '</select>' +
+          badges.join('') +
+          '</div>' +
+          '</div>' +
+          '<div class="row-right">' +
+          '<div class="row-votes">' + i.votes + ' votes</div>' +
+          '<div class="row-date">' + date + '</div>' +
+          '</div>' +
+          '</div>';
+      }).join('');
+
+      list.querySelectorAll('.status-select').forEach(function (sel) {
+        sel.addEventListener('change', function () {
+          sel.className = 'status-select ' + sel.value;
+          const ideaId = sel.getAttribute('data-idea-id');
+          fetch('/api/ideas/' + ideaId + '/status', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ status: sel.value }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function () { load(); });
+        });
+      });
+    }
+
+    document.getElementById('search').addEventListener('input', render);
+    document.getElementById('category').addEventListener('change', render);
+    document.getElementById('sort').addEventListener('change', render);
+
+    function load() {
+      fetch('/api/ideas?customer=' + encodeURIComponent(customerSlug))
+        .then(function (r) { return r.json(); })
+        .then(function (d) { allIdeas = d.ideas || []; render(); });
+    }
+
+    load();
+  </script>
+</body>
+</html>`;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -740,6 +964,11 @@ export default {
     const boardMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/?$/);
     if (request.method === "GET" && boardMatch) {
       return html(boardPage(boardMatch[1]));
+    }
+
+    const adminMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/admin\/?$/);
+    if (request.method === "GET" && adminMatch) {
+      return html(adminPage(adminMatch[1]));
     }
 
     const connectMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/connect\/?$/);
