@@ -29,6 +29,7 @@ const DELETE_WEBHOOK_WORKFLOW_ID = "wf_c485e6e5025a";
 const LIST_WEBHOOKS_FOR_DELIVERY_WORKFLOW_ID = "wf_17330509843e";
 const RECORD_WEBHOOK_DELIVERY_WORKFLOW_ID = "wf_f4502de11768";
 const DELETE_IDEA_WORKFLOW_ID = "wf_90a8f1268843";
+const LIST_STATUS_HISTORY_WORKFLOW_ID = "wf_144ac631f830";
 const OWNER_SLUG = "__owner__";
 
 // Bidirectional: a Linear state change updates the matching idea's status in
@@ -1932,6 +1933,10 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
     .chip.status-chip.declined { background-color: var(--bad-tint); color: var(--bad); }
     .chip.badge { background: var(--surface-3); color: var(--text-muted); text-decoration: none; }
 
+    .timeline { margin-top: 18px; display: flex; flex-direction: column; gap: 6px; }
+    .timeline-item { font-size: 12px; color: var(--text-muted); display: flex; gap: 6px; align-items: baseline; }
+    .timeline-item .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+    .timeline-date { color: var(--text-faint); margin-left: auto; font-size: 11px; }
     .comments-section { margin-top: 24px; }
     .comments-title { font-size: 14px; font-weight: 700; margin-bottom: 12px; }
     .comment { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
@@ -2027,6 +2032,7 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
         badges.join('') +
         '<span style="color:var(--text-faint);font-size:11px;margin-left:auto;">' + date + '</span>' +
         '</div>' +
+        '<div class="timeline" id="timeline"></div>' +
         '</div>' +
         '</div>' +
         '<div class="comments-section">' +
@@ -2083,6 +2089,29 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
       });
 
       loadComments(idea.id);
+      loadTimeline(idea.id);
+    }
+
+    function loadTimeline(id) {
+      var el = document.getElementById('timeline');
+      if (!el) return;
+      fetch('/api/ideas/' + id + '/history')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var history = d.history || [];
+          if (!history.length) {
+            el.innerHTML = '';
+            return;
+          }
+          el.innerHTML = history.map(function (h) {
+            var toLabel = statusLabels[h.to_status] || h.to_status;
+            var fromLabel = h.from_status ? (statusLabels[h.from_status] || h.from_status) : null;
+            var date = h.changed_at ? new Date(h.changed_at).toLocaleDateString() : '';
+            return '<div class="timeline-item"><span class="dot"></span>' +
+              (fromLabel ? escapeHtml(fromLabel) + ' &rarr; ' : '') + escapeHtml(toLabel) +
+              '<span class="timeline-date">' + date + '</span></div>';
+          }).join('');
+        });
     }
 
     function loadComments(id) {
@@ -3786,6 +3815,16 @@ export default {
         return json(data);
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
+    const statusHistoryMatch = url.pathname.match(/^\/api\/ideas\/(\d+)\/history$/);
+    if (request.method === "GET" && statusHistoryMatch) {
+      try {
+        const data = await callWorkflow(env, LIST_STATUS_HISTORY_WORKFLOW_ID, { ideaId: Number(statusHistoryMatch[1]) });
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message, history: [] }, 502);
       }
     }
 

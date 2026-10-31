@@ -121,6 +121,12 @@ async function run() {
     assert(mine.is_team === false, "anonymous comment was flagged is_team");
     assert(mine.internal === false, "anonymous comment was flagged internal");
   });
+  await check("status history reachable", async () => {
+    const r = await fetch(BASE_URL + "/api/ideas/" + ideaId + "/history");
+    const body = await r.json();
+    assert(r.status === 200, "status " + r.status);
+    assert(Array.isArray(body.history), "history was not an array");
+  });
   await check("status change rejected without a status", async () => {
     const r = await fetch(BASE_URL + "/api/ideas/" + ideaId + "/status", {
       method: "POST",
