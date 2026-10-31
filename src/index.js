@@ -1897,7 +1897,10 @@ function roadmapPage(customerSlug, isOwner) {
     .column-title { font-weight: 700; font-size: 13.5px; color: var(--text); }
     .column-count { margin-left: auto; background: var(--card); color: var(--text-faint); font-size: 11.5px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
 
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 13px 14px; margin-bottom: 8px; display: flex; gap: 10px; align-items: flex-start; }
+    .card { background: var(--card); border: 1px solid var(--border); border-left-width: 3px; border-radius: 12px; padding: 13px 14px 13px 12px; margin-bottom: 8px; display: flex; gap: 10px; align-items: flex-start; }
+    .card.cat-Feature { border-left-color: var(--accent); }
+    .card.cat-Bug { border-left-color: var(--bad); }
+    .card.cat-Feedback { border-left-color: var(--good); }
     .card-body { flex: 1; min-width: 0; }
     .card-title { font-weight: 600; font-size: 13.5px; color: var(--text); }
     .card-desc { color: var(--text-muted); font-size: 12px; margin-top: 4px; line-height: 1.4; }
@@ -1953,7 +1956,7 @@ function roadmapPage(customerSlug, isOwner) {
           .sort(function (a, b) { return b.votes - a.votes; });
         var cards = items.length
           ? items.map(function (i) {
-              return '<div class="card">' +
+              return '<div class="card cat-' + i.category + '">' +
                 '<div class="card-body">' +
                 '<div class="card-title">' + escapeHtml(i.title) + '</div>' +
                 (i.description ? '<div class="card-desc">' + escapeHtml(i.description) + '</div>' : '') +
@@ -2029,7 +2032,10 @@ function adminPage(customerSlug, isOwner) {
     .column-title { font-weight: 700; font-size: 13px; color: var(--text); }
     .column-count { margin-left: auto; background: var(--card); color: var(--text-faint); font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
 
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 13px; margin-bottom: 8px; cursor: grab; }
+    .card { background: var(--card); border: 1px solid var(--border); border-left-width: 3px; border-radius: 12px; padding: 12px 13px 12px 11px; margin-bottom: 8px; cursor: grab; }
+    .card.cat-Feature { border-left-color: var(--accent); }
+    .card.cat-Bug { border-left-color: var(--bad); }
+    .card.cat-Feedback { border-left-color: var(--good); }
     .card.dragging { opacity: 0.4; }
     .card-title { font-weight: 600; font-size: 13px; color: var(--text); }
     .card-desc { color: var(--text-muted); font-size: 11.5px; margin-top: 4px; line-height: 1.4; }
@@ -2112,7 +2118,7 @@ function adminPage(customerSlug, isOwner) {
               if (i.submitter_email) badges.push('<span class="chip badge">' + escapeHtml(i.submitter_email) + '</span>');
               if (i.linear_issue_url) badges.push('<a class="chip badge" href="' + i.linear_issue_url + '" target="_blank" rel="noopener">Linear &#8599;</a>');
               if (i.notion_archived_at) badges.push('<span class="chip badge">Notion</span>');
-              return '<div class="card" draggable="true" data-idea-id="' + i.id + '">' +
+              return '<div class="card cat-' + i.category + '" draggable="true" data-idea-id="' + i.id + '">' +
                 '<div class="card-title">' + escapeHtml(i.title) + '</div>' +
                 (i.description ? '<div class="card-desc">' + escapeHtml(i.description) + '</div>' : '') +
                 '<div class="card-meta">' +
