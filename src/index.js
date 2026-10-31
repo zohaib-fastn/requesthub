@@ -28,6 +28,8 @@ const LIST_WEBHOOKS_WORKFLOW_ID = "wf_655ab12c26b8";
 const DELETE_WEBHOOK_WORKFLOW_ID = "wf_c485e6e5025a";
 const LIST_WEBHOOKS_FOR_DELIVERY_WORKFLOW_ID = "wf_17330509843e";
 const RECORD_WEBHOOK_DELIVERY_WORKFLOW_ID = "wf_f4502de11768";
+const LIST_WEBHOOK_DELIVERIES_WORKFLOW_ID = "wf_416dfeafcba9";
+const GET_WEBHOOK_DELIVERY_WORKFLOW_ID = "wf_42336ac2e7cd";
 const DELETE_IDEA_WORKFLOW_ID = "wf_90a8f1268843";
 const LIST_STATUS_HISTORY_WORKFLOW_ID = "wf_144ac631f830";
 const LIST_CHANGELOG_WORKFLOW_ID = "wf_69d695b3974e";
@@ -227,10 +229,39 @@ async function signWebhookPayload(secret, rawBody) {
   return toHex(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody)));
 }
 
+// Shared by both the automatic fire-and-forget delivery below and the manual
+// "Redeliver" action - same POST, same signature, same delivery-log write, so
+// a redeliver attempt is indistinguishable from an original one in the log.
+async function sendWebhookAndRecord(env, webhookId, url, secret, eventType, body) {
+  let deliveryStatus = "error";
+  try {
+    const signature = await signWebhookPayload(secret, body);
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-requesthub-signature": signature,
+        "x-requesthub-event": eventType,
+      },
+      body,
+    });
+    deliveryStatus = res.ok ? "delivered (" + res.status + ")" : "failed (" + res.status + ")";
+  } catch {
+    // Single attempt, no automatic retry - a dead customer endpoint shouldn't
+    // affect anything else in the request that triggered this event. Manual
+    // redelivery (Settings -> Webhooks -> Redeliver) is the recovery path.
+  }
+  try {
+    await callWorkflow(env, RECORD_WEBHOOK_DELIVERY_WORKFLOW_ID, { id: webhookId, status: deliveryStatus, eventType, payload: body });
+  } catch {}
+  return deliveryStatus;
+}
+
 // Fire-and-forget outbound delivery to every webhook a tenant has registered
-// for this event type - no retry/queue (a demo-scale feature, not a durable
-// delivery system). Runs via ctx.waitUntil so it completes after the response
-// is already sent back to the caller, without the caller waiting on it.
+// for this event type. Runs via ctx.waitUntil so it completes after the
+// response is already sent back to the caller, without the caller waiting on
+// it. See sendWebhookAndRecord for the shared send+log logic, and the
+// Settings page's Webhooks card for manual redelivery of a failed attempt.
 function deliverWebhooks(env, ctx, customerSlug, eventType, payload) {
   const task = (async () => {
     let webhooks = [];
@@ -241,30 +272,7 @@ function deliverWebhooks(env, ctx, customerSlug, eventType, payload) {
       return;
     }
     const body = JSON.stringify({ event: eventType, customerSlug, data: payload, sentAt: new Date().toISOString() });
-    await Promise.all(
-      webhooks.map(async (w) => {
-        let deliveryStatus = "error";
-        try {
-          const signature = await signWebhookPayload(w.secret, body);
-          const res = await fetch(w.url, {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              "x-requesthub-signature": signature,
-              "x-requesthub-event": eventType,
-            },
-            body,
-          });
-          deliveryStatus = res.ok ? "delivered (" + res.status + ")" : "failed (" + res.status + ")";
-        } catch {
-          // Single attempt, no retry - a dead customer endpoint shouldn't
-          // affect anything else in the request that triggered this event.
-        }
-        try {
-          await callWorkflow(env, RECORD_WEBHOOK_DELIVERY_WORKFLOW_ID, { id: w.id, status: deliveryStatus });
-        } catch {}
-      })
-    );
+    await Promise.all(webhooks.map((w) => sendWebhookAndRecord(env, w.id, w.url, w.secret, eventType, body)));
   })();
   if (ctx && ctx.waitUntil) ctx.waitUntil(task);
 }
@@ -1326,14 +1334,67 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
             var status = w.last_delivery_status
               ? ' - last delivery: ' + w.last_delivery_status
               : ' - no deliveries yet';
-            return '<div class="team-row"><span>' + url + '<br/><span style="color:var(--text-faint);font-size:11px;">' + w.events.replace(/,/g, ', ') + status + '</span></span>' +
-              '<button type="button" class="btn-remove" data-id="' + w.id + '">Remove</button></div>';
+            return '<div class="team-row" style="flex-direction:column;align-items:stretch;">' +
+              '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+              '<span>' + url + '<br/><span style="color:var(--text-faint);font-size:11px;">' + w.events.replace(/,/g, ', ') + status + '</span></span>' +
+              '<span>' +
+              '<button type="button" class="btn-copy btn-view-deliveries" data-id="' + w.id + '" style="margin-right:6px;">View deliveries</button>' +
+              '<button type="button" class="btn-remove" data-id="' + w.id + '">Remove</button>' +
+              '</span>' +
+              '</div>' +
+              '<div id="deliveries-' + w.id + '" style="display:none;margin-top:8px;"></div>' +
+              '</div>';
           }).join('');
           list.querySelectorAll('.btn-remove').forEach(function (btn) {
             btn.addEventListener('click', function () {
               fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/webhooks/' + btn.getAttribute('data-id'), {
                 method: 'DELETE',
               }).then(loadWebhooks);
+            });
+          });
+          function loadDeliveries(webhookId) {
+            var panel = document.getElementById('deliveries-' + webhookId);
+            panel.innerHTML = '<p class="hint">Loading...</p>';
+            fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/webhooks/' + webhookId + '/deliveries')
+              .then(function (r) { return r.json(); })
+              .then(function (d) {
+                var deliveries = (d && d.ok && d.deliveries) || [];
+                if (!deliveries.length) {
+                  panel.innerHTML = '<p class="hint">No deliveries logged yet.</p>';
+                  return;
+                }
+                panel.innerHTML = '<div style="border:1px solid var(--border);border-radius:9px;overflow:hidden;">' +
+                  deliveries.map(function (del) {
+                    var ok = /^delivered/.test(del.status);
+                    var when = new Date(del.created_at).toLocaleString();
+                    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px;">' +
+                      '<span><span style="color:' + (ok ? 'var(--good)' : 'var(--bad)') + ';font-weight:600;">' + del.status + '</span>' +
+                      ' <span style="color:var(--text-faint);">' + (del.event_type || '') + ' - ' + when + '</span></span>' +
+                      '<button type="button" class="btn-copy btn-redeliver" data-delivery-id="' + del.id + '" style="padding:3px 9px;font-size:11px;">Redeliver</button>' +
+                      '</div>';
+                  }).join('') + '</div>';
+                panel.querySelectorAll('.btn-redeliver').forEach(function (rbtn) {
+                  rbtn.addEventListener('click', function () {
+                    rbtn.disabled = true;
+                    rbtn.textContent = 'Sending...';
+                    fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/webhook-deliveries/' + rbtn.getAttribute('data-delivery-id') + '/redeliver', {
+                      method: 'POST',
+                    })
+                      .then(function (r) { return r.json(); })
+                      .then(function () { loadDeliveries(webhookId); });
+                  });
+                });
+              });
+          }
+
+          list.querySelectorAll('.btn-view-deliveries').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              var webhookId = btn.getAttribute('data-id');
+              var panel = document.getElementById('deliveries-' + webhookId);
+              var isOpen = panel.style.display !== 'none';
+              if (isOpen) { panel.style.display = 'none'; return; }
+              panel.style.display = 'block';
+              loadDeliveries(webhookId);
             });
           });
         });
@@ -4075,6 +4136,45 @@ export default {
       try {
         const data = await callWorkflow(env, DELETE_WEBHOOK_WORKFLOW_ID, { customerSlug, id: Number(webhookDeleteMatch[2]) });
         return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
+    const webhookDeliveriesMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/webhooks\/(\d+)\/deliveries$/);
+    if (request.method === "GET" && webhookDeliveriesMatch) {
+      const customerSlug = webhookDeliveriesMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      try {
+        const data = await callWorkflow(env, LIST_WEBHOOK_DELIVERIES_WORKFLOW_ID, {
+          customerSlug,
+          webhookId: Number(webhookDeliveriesMatch[2]),
+        });
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
+    const redeliverMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/webhook-deliveries\/(\d+)\/redeliver$/);
+    if (request.method === "POST" && redeliverMatch) {
+      const customerSlug = redeliverMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      try {
+        const lookup = await callWorkflow(env, GET_WEBHOOK_DELIVERY_WORKFLOW_ID, {
+          customerSlug,
+          deliveryId: Number(redeliverMatch[2]),
+        });
+        if (!lookup?.ok || !lookup.delivery) {
+          return json({ ok: false, error: lookup?.error || "delivery not found" }, 404);
+        }
+        const { webhook_id, url: webhookUrl, secret, event_type, payload } = lookup.delivery;
+        const status = await sendWebhookAndRecord(env, webhook_id, webhookUrl, secret, event_type, payload);
+        return json({ ok: true, status });
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
       }

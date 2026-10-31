@@ -226,6 +226,14 @@ async function run() {
     const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/webhooks");
     assert(r.status === 401, "status " + r.status);
   });
+  await check("webhook deliveries list requires auth", async () => {
+    const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/webhooks/1/deliveries");
+    assert(r.status === 401, "status " + r.status);
+  });
+  await check("webhook redeliver requires auth", async () => {
+    const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/webhook-deliveries/1/redeliver", { method: "POST" });
+    assert(r.status === 401, "status " + r.status);
+  });
   await check("CSV export requires auth", async () => {
     const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/export.csv");
     assert(r.status === 401, "status " + r.status);
