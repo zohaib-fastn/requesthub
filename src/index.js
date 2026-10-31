@@ -13,6 +13,8 @@ const SET_CUSTOMER_PLAN_WORKFLOW_ID = "wf_4ae1ea722645";
 const GET_CUSTOMER_SETTINGS_WORKFLOW_ID = "wf_1607747c6266";
 const SET_CUSTOMER_SETTINGS_WORKFLOW_ID = "wf_d33fbb3375fe";
 const LIST_DESTINATIONS_WORKFLOW_ID = "wf_1c6bab8b15d7";
+const LIST_CUSTOMERS_WORKFLOW_ID = "wf_c977bddd9248";
+const OWNER_SLUG = "__owner__";
 
 const PLANS = [
   { id: "free", name: "Free", price: "$0", period: "/mo", blurb: "Try RequestHub with your own board.", features: ["1 board", "Unlimited ideas & votes", "Community support"] },
@@ -2066,6 +2068,183 @@ function loginPage(customerSlug, mode, errorMsg, next) {
 </html>`;
 }
 
+function ownerLoginPage(errorMsg) {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Owner login - RequestHub</title>
+  ${DESIGN_FONT_LINK}
+  <style>
+    ${DESIGN_TOKENS}
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { width: 100%; max-width: 360px; padding: 32px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); box-sizing: border-box; }
+    h1 { font-size: 18px; margin: 0 0 6px; color: var(--text); }
+    p { color: var(--text-muted); font-size: 13px; margin: 0 0 18px; line-height: 1.5; }
+    input {
+      width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: 8px;
+      padding: 10px 12px; font-size: 14px; box-sizing: border-box; margin-bottom: 12px; font-family: inherit;
+    }
+    button {
+      width: 100%; background: var(--accent); color: #fff; border: none; padding: 11px; border-radius: var(--radius-btn);
+      font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    button:hover { background: var(--accent-hover); }
+    .error { color: var(--bad); font-size: 12.5px; margin: -4px 0 12px; }
+    .back { display: block; text-align: center; margin-top: 16px; color: var(--text-muted); font-size: 12.5px; text-decoration: none; }
+    .back:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>RequestHub owner console</h1>
+    <p>This is the product-wide admin - every customer on RequestHub, not just one board.</p>
+    ${errorMsg ? `<div class="error">${escapeHtml(errorMsg)}</div>` : ""}
+    <form id="form">
+      <input id="password" type="password" placeholder="Owner password" required autofocus />
+      <button type="submit">Log in</button>
+    </form>
+    <a class="back" href="/">&larr; Back home</a>
+  </div>
+  <script>
+    document.getElementById('form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var password = document.getElementById('password').value;
+      fetch('/api/owner/auth', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ password: password }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.ok) {
+            window.location.href = '/owner';
+          } else {
+            window.location.href = '/owner/login?error=' + encodeURIComponent(d.error || 'Incorrect password');
+          }
+        });
+    });
+  </script>
+</body>
+</html>`;
+}
+
+function ownerDashboardPage(customers, errorMsg) {
+  const totalCustomers = customers.length;
+  const paidCustomers = customers.filter((c) => c.plan && c.plan !== "free").length;
+  const connectedCustomers = customers.filter((c) => c.slackChannel || c.linearTeamId || c.notionPageId).length;
+  const totalIdeas = customers.reduce((sum, c) => sum + (c.ideaCount || 0), 0);
+
+  const rows = customers
+    .map((c) => {
+      const chip = (label, active) =>
+        `<span class="tool-chip${active ? " active" : ""}">${active ? "&check; " : ""}${label}</span>`;
+      const signedUp = c.createdAt ? new Date(c.createdAt).toLocaleDateString() : "-";
+      const lastActivity = c.lastIdeaAt ? new Date(c.lastIdeaAt).toLocaleDateString() : "no ideas yet";
+      return `<tr>
+        <td>
+          <div class="cust-name">${escapeHtml(c.name)}</div>
+          <div class="cust-slug">${escapeHtml(c.slug)}</div>
+        </td>
+        <td><span class="plan-chip plan-${escapeHtml(c.plan)}">${escapeHtml(c.plan)}</span></td>
+        <td>
+          ${chip("Slack", Boolean(c.slackChannel))}
+          ${chip("Linear", Boolean(c.linearTeamId))}
+          ${chip("Notion", Boolean(c.notionPageId))}
+        </td>
+        <td>${c.ideaCount} idea${c.ideaCount === 1 ? "" : "s"} &middot; ${c.totalVotes} vote${c.totalVotes === 1 ? "" : "s"}</td>
+        <td>${escapeHtml(lastActivity)}</td>
+        <td>${escapeHtml(signedUp)}</td>
+        <td>${c.hasFastnOrg ? '<span class="org-chip real">real tenant</span>' : '<span class="org-chip seed">seeded/demo</span>'}</td>
+        <td class="actions">
+          <a href="/b/${encodeURIComponent(c.slug)}" target="_blank" rel="noopener">Board</a>
+          <a href="/b/${encodeURIComponent(c.slug)}/admin" target="_blank" rel="noopener">Triage</a>
+        </td>
+      </tr>`;
+    })
+    .join("");
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Owner console - RequestHub</title>
+  ${DESIGN_FONT_LINK}
+  <style>
+    ${DESIGN_TOKENS}
+    .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+    .brand { font-weight: 700; font-size: 15px; }
+    .back { margin-left: auto; color: var(--text-muted); font-size: 13px; text-decoration: none; }
+    .back:hover { color: var(--text); }
+
+    .page { max-width: 1180px; margin: 0 auto; padding: 24px; }
+    .page-title { font-size: 20px; font-weight: 700; margin: 0 0 18px; }
+    .error { color: var(--bad); font-size: 13px; margin-bottom: 14px; }
+
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+    .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 14px 16px; }
+    .stat-count { font-size: 22px; font-weight: 700; font-family: "Manrope", monospace; }
+    .stat-label { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+
+    table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden; }
+    th { text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+    td { padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    .cust-name { font-weight: 600; color: var(--text); }
+    .cust-slug { color: var(--text-faint); font-size: 11.5px; }
+    .plan-chip { display: inline-block; padding: 2px 9px; border-radius: 999px; font-weight: 600; font-size: 11px; background: var(--surface-3); color: var(--text-muted); text-transform: capitalize; }
+    .plan-chip.plan-growth, .plan-chip.plan-pro { background: var(--accent-tint); color: var(--accent); }
+    .tool-chip { display: inline-block; margin: 0 4px 4px 0; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 600; background: var(--surface-3); color: var(--text-faint); }
+    .tool-chip.active { background: var(--good-tint); color: var(--good); }
+    .org-chip { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+    .org-chip.real { background: var(--good-tint); color: var(--good); }
+    .org-chip.seed { background: var(--surface-3); color: var(--text-faint); }
+    .actions a { color: var(--accent); text-decoration: none; font-size: 12px; font-weight: 600; margin-right: 10px; }
+    .actions a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo-mark">R</div>
+    <div class="brand">RequestHub owner console</div>
+    <a class="back" href="/owner/logout">Log out</a>
+  </div>
+  <div class="page">
+    <h1 class="page-title">All customers</h1>
+    ${errorMsg ? `<div class="error">${escapeHtml(errorMsg)}</div>` : ""}
+
+    <div class="stats">
+      <div class="stat-card"><div class="stat-count">${totalCustomers}</div><div class="stat-label">Total customers</div></div>
+      <div class="stat-card"><div class="stat-count">${paidCustomers}</div><div class="stat-label">On a paid plan</div></div>
+      <div class="stat-card"><div class="stat-count">${connectedCustomers}</div><div class="stat-label">Connected a tool</div></div>
+      <div class="stat-card"><div class="stat-count">${totalIdeas}</div><div class="stat-label">Ideas submitted (all customers)</div></div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Customer</th>
+          <th>Plan</th>
+          <th>Connected tools</th>
+          <th>Activity</th>
+          <th>Last idea</th>
+          <th>Signed up</th>
+          <th>Tenant</th>
+          <th>Links</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows || `<tr><td colspan="8" style="text-align:center; color:var(--text-faint); padding:30px;">No customers yet.</td></tr>`}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>`;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -2076,6 +2255,51 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/login") {
       return html(loginLookupPage(url.searchParams.get("error")));
+    }
+
+    if (request.method === "GET" && url.pathname === "/owner/login") {
+      return html(ownerLoginPage(url.searchParams.get("error")));
+    }
+
+    if (request.method === "GET" && url.pathname === "/owner/logout") {
+      const res = new Response(null, { status: 302, headers: { Location: "/owner/login" } });
+      res.headers.append("Set-Cookie", `${sessionCookieName(OWNER_SLUG)}=; Path=/; Max-Age=0`);
+      return res;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/owner/auth") {
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ ok: false, error: "invalid JSON body" }, 400);
+      }
+      if (!env.OWNER_PASSWORD) {
+        return json({ ok: false, error: "Owner login is not configured yet." }, 500);
+      }
+      const password = (body.password || "").toString();
+      if (password !== env.OWNER_PASSWORD) {
+        return json({ ok: false, error: "Incorrect password" }, 401);
+      }
+      const token = await createSessionToken(env, OWNER_SLUG);
+      const res = json({ ok: true });
+      res.headers.append(
+        "Set-Cookie",
+        `${sessionCookieName(OWNER_SLUG)}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`
+      );
+      return res;
+    }
+
+    if (request.method === "GET" && url.pathname === "/owner") {
+      if (!(await requireAuth(request, env, OWNER_SLUG))) {
+        return new Response(null, { status: 302, headers: { Location: "/owner/login" } });
+      }
+      try {
+        const data = await callWorkflow(env, LIST_CUSTOMERS_WORKFLOW_ID, {});
+        return html(ownerDashboardPage(data?.customers || [], data?.ok ? null : data?.error));
+      } catch (err) {
+        return html(ownerDashboardPage([], err.message));
+      }
     }
 
     if (request.method === "GET" && url.pathname === "/embed.js") {
