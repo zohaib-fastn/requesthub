@@ -2632,6 +2632,22 @@ function adminPage(customerSlug, isOwner) {
     .filters-row input::placeholder { color: var(--text-faint); }
     .filters-row select { cursor: pointer; }
 
+    .bulk-bar {
+      display: none; align-items: center; gap: 10px; background: var(--accent-tint); border: 1px solid var(--accent);
+      border-radius: 10px; padding: 9px 12px; margin-bottom: 14px; font-size: 13px; color: var(--text);
+    }
+    .bulk-bar.open { display: flex; }
+    .bulk-bar select {
+      background: var(--card); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: 6px 10px; font-size: 13px; font-family: inherit; cursor: pointer;
+    }
+    .bulk-bar button {
+      border: none; border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .bulk-apply-btn { background: var(--accent); color: #fff; }
+    .bulk-delete-btn { background: var(--bad-tint); color: var(--bad); }
+    .bulk-clear-btn { background: none; color: var(--text-muted); margin-left: auto; }
+
     .empty { color: var(--text-faint); font-size: 13.5px; text-align: center; padding: 40px 16px; }
 
     .board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; align-items: start; }
@@ -2650,8 +2666,12 @@ function adminPage(customerSlug, isOwner) {
     .column-title { font-weight: 700; font-size: 13px; color: var(--text); }
     .column-count { margin-left: auto; background: var(--card); color: var(--text-faint); font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
 
-    .card { position: relative; background: var(--card); border: 1px solid var(--border); border-left-width: 3px; border-radius: 12px; padding: 12px 28px 12px 11px; margin-bottom: 8px; cursor: grab; }
+    .card { position: relative; background: var(--card); border: 1px solid var(--border); border-left-width: 3px; border-radius: 12px; padding: 12px 28px 12px 28px; margin-bottom: 8px; cursor: grab; }
     .card.dragging { opacity: 0.4; }
+    .card.selected { outline: 2px solid var(--accent); outline-offset: -1px; }
+    .card-select {
+      position: absolute; top: 10px; left: 8px; width: 14px; height: 14px; cursor: pointer; margin: 0;
+    }
     .card-delete-btn {
       position: absolute; top: 6px; right: 6px; width: 18px; height: 18px; line-height: 16px; text-align: center;
       border: none; border-radius: 50%; background: transparent; color: var(--text-faint); font-size: 15px; cursor: pointer; padding: 0;
@@ -2693,6 +2713,13 @@ function adminPage(customerSlug, isOwner) {
         <option value="Feedback">Feedback</option>
       </select>
     </div>
+    <div class="bulk-bar" id="bulkBar">
+      <span id="bulkCount">0 selected</span>
+      <select id="bulkStatus"></select>
+      <button type="button" class="bulk-apply-btn" id="bulkApplyBtn">Change status</button>
+      <button type="button" class="bulk-delete-btn" id="bulkDeleteBtn">Delete</button>
+      <button type="button" class="bulk-clear-btn" id="bulkClearBtn">Clear selection</button>
+    </div>
     <div class="board" id="board"></div>
   </div>
 
@@ -2703,6 +2730,7 @@ function adminPage(customerSlug, isOwner) {
     let categories = ["Feature", "Bug", "Feedback"];
     let STATUS_LABELS = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped", declined: "Declined" };
     let draggingIdeaId = null;
+    let selectedIds = new Set();
 
     var CATEGORY_PALETTE = [
       { bg: 'var(--accent-tint)', fg: 'var(--accent)' },
@@ -2740,6 +2768,50 @@ function adminPage(customerSlug, isOwner) {
       }).then(function (r) { return r.json(); });
     }
 
+    function populateBulkStatusSelect() {
+      const sel = document.getElementById('bulkStatus');
+      if (!sel) return;
+      sel.innerHTML = statuses.map(function (s) { return '<option value="' + s + '">' + escapeHtml(STATUS_LABELS[s] || s) + '</option>'; }).join('');
+    }
+
+    function renderBulkBar() {
+      const bar = document.getElementById('bulkBar');
+      document.getElementById('bulkCount').textContent = selectedIds.size + ' selected';
+      bar.classList.toggle('open', selectedIds.size > 0);
+    }
+
+    document.getElementById('bulkApplyBtn').addEventListener('click', function () {
+      const status = document.getElementById('bulkStatus').value;
+      const ids = Array.from(selectedIds);
+      if (!ids.length) return;
+      Promise.all(ids.map(function (id) { return changeStatus(id, status); })).then(function () {
+        selectedIds.clear();
+        load();
+      });
+    });
+
+    document.getElementById('bulkDeleteBtn').addEventListener('click', function () {
+      const ids = Array.from(selectedIds);
+      if (!ids.length) return;
+      if (!window.confirm('Delete ' + ids.length + ' idea(s) permanently? This cannot be undone.')) return;
+      Promise.all(ids.map(function (id) {
+        return fetch('/api/ideas/' + id, {
+          method: 'DELETE',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ customerSlug: customerSlug }),
+        });
+      })).then(function () {
+        selectedIds.clear();
+        load();
+      });
+    });
+
+    document.getElementById('bulkClearBtn').addEventListener('click', function () {
+      selectedIds.clear();
+      renderBulkBar();
+      render();
+    });
+
     function render() {
       const board = document.getElementById('board');
       const q = (document.getElementById('search').value || '').toLowerCase();
@@ -2762,7 +2834,8 @@ function adminPage(customerSlug, isOwner) {
               if (i.notion_archived_at) badges.push('<span class="chip badge">Notion</span>');
               badges.push('<a class="chip badge" href="/b/' + encodeURIComponent(customerSlug) + '/ideas/' + i.id + '" title="Open and reply">Reply</a>');
               var catColor = categoryColor(i.category);
-              return '<div class="card" style="border-left-color:' + catColor.fg + '" draggable="true" data-idea-id="' + i.id + '">' +
+              return '<div class="card' + (selectedIds.has(i.id) ? ' selected' : '') + '" style="border-left-color:' + catColor.fg + '" draggable="true" data-idea-id="' + i.id + '">' +
+                '<input type="checkbox" class="card-select" data-idea-id="' + i.id + '"' + (selectedIds.has(i.id) ? ' checked' : '') + ' title="Select for bulk actions" />' +
                 '<button type="button" class="card-delete-btn" data-idea-id="' + i.id + '" title="Delete">&times;</button>' +
                 '<div class="card-title">' + escapeHtml(i.title) + '</div>' +
                 (i.description ? '<div class="card-desc">' + escapeHtml(i.description) + '</div>' : '') +
@@ -2808,6 +2881,17 @@ function adminPage(customerSlug, isOwner) {
         });
       });
 
+      board.querySelectorAll('.card-select').forEach(function (cb) {
+        cb.addEventListener('click', function (e) { e.stopPropagation(); });
+        cb.addEventListener('change', function () {
+          var ideaId = Number(cb.getAttribute('data-idea-id'));
+          if (cb.checked) selectedIds.add(ideaId);
+          else selectedIds.delete(ideaId);
+          cb.closest('.card').classList.toggle('selected', cb.checked);
+          renderBulkBar();
+        });
+      });
+
       board.querySelectorAll('.column').forEach(function (col) {
         col.addEventListener('dragover', function (e) {
           e.preventDefault();
@@ -2840,12 +2924,14 @@ function adminPage(customerSlug, isOwner) {
         .then(function (r) { return r.json(); })
         .then(function (d) {
           allIdeas = d.ideas || [];
-          if (d.statusLabels) STATUS_LABELS = d.statusLabels;
+          if (d.statusLabels) { STATUS_LABELS = d.statusLabels; populateBulkStatusSelect(); }
           if (d.categories && d.categories.length) { categories = d.categories; populateCategorySelect(); }
           render();
+          renderBulkBar();
         });
     }
 
+    populateBulkStatusSelect();
     load();
   </script>
 </body>
