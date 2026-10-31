@@ -851,6 +851,7 @@ function connectPage(customerSlug, endOrgId, token, setupLinks, isOwner) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Connect your tools - RequestHub</title>
   ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
     .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
@@ -897,6 +898,7 @@ function connectPage(customerSlug, endOrgId, token, setupLinks, isOwner) {
     <div class="logo-mark">R</div>
     <div class="brand">RequestHub</div>
     <nav class="nav-right">
+      <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
       ${isOwner ? `<a class="owner-link" href="/owner">&larr; Owner console</a>` : ""}
       <a href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
       <a href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
@@ -929,6 +931,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Settings - RequestHub</title>
   ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
     .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
@@ -991,6 +994,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
     <div class="logo-mark">R</div>
     <div class="brand">RequestHub</div>
     <nav class="nav-right">
+      <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
       ${isOwner ? `<a class="owner-link" href="/owner">&larr; Owner console</a>` : ""}
       <a href="/b/${encodeURIComponent(customerSlug)}/admin">&larr; Back to triage</a>
       <a class="logout" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
@@ -1461,6 +1465,7 @@ function connectUnavailablePage(customerSlug, isOwner) {
   <meta charset="utf-8" />
   <title>Connect your tools - RequestHub</title>
   ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
     body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
@@ -2099,6 +2104,7 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Idea - ${escapeHtml(customerSlug)} - RequestHub</title>
   ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
     .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; align-items: center; gap: 4px; height: 56px; }
@@ -2160,6 +2166,7 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
     <div class="logo-mark">R</div>
     <div class="brand">${escapeHtml(customerSlug)}</div>
     <div class="nav-right">
+      <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
       ${isOwner ? `<a href="/owner">&larr; Owner console</a>` : ""}
       <a href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
       <button type="button" id="copyLinkBtn">Copy link</button>
@@ -2390,6 +2397,7 @@ function billingPage(customerSlug, currentPlan, isOwner) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Billing - RequestHub</title>
   ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
     .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
@@ -2440,6 +2448,7 @@ function billingPage(customerSlug, currentPlan, isOwner) {
     <div class="logo-mark">R</div>
     <div class="brand">RequestHub <span class="org">/ ${escapeHtml(customerSlug)} billing</span></div>
     <nav class="nav-right">
+      <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
       ${isOwner ? `<a class="owner-link" href="/owner">&larr; Owner console</a>` : ""}
       <a href="/b/${encodeURIComponent(customerSlug)}/admin">&larr; Back to triage</a>
       <a class="logout" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
