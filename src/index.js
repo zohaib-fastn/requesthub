@@ -1577,7 +1577,8 @@ function boardPage(customerSlug, isOwner) {
 
         <div class="filters-row">
           <div class="filter-tabs">
-            <button class="filter-tab active" data-sort="votes">Most voted</button>
+            <button class="filter-tab active" data-sort="trending">Trending</button>
+            <button class="filter-tab" data-sort="votes">Most voted</button>
             <button class="filter-tab" data-sort="new">Newest</button>
           </div>
           <input id="search" placeholder="Search feedback..." />
@@ -1632,7 +1633,15 @@ function boardPage(customerSlug, isOwner) {
     let allIdeas = [];
     let statusLabels = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped", declined: "Declined" };
     let activeCategory = "all";
-    let activeSort = "votes";
+    let activeSort = "trending";
+
+    function trendingScore(idea) {
+      // Hacker-News-style time decay: rewards votes earned by newer ideas over
+      // the same vote count sitting on something old, without needing per-vote
+      // timestamps (none are tracked today).
+      var ageHours = (Date.now() - new Date(idea.created_at).getTime()) / 3600000;
+      return (idea.votes + 1) / Math.pow(ageHours + 2, 1.5);
+    }
 
     const ICONS = {
       chevronUp: '<svg class="icon" viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15"/></svg>',
@@ -1657,6 +1666,7 @@ function boardPage(customerSlug, isOwner) {
       });
       ideas = ideas.slice().sort(function (a, b) {
         if (sort === 'new') return new Date(b.created_at) - new Date(a.created_at);
+        if (sort === 'trending') return trendingScore(b) - trendingScore(a);
         return b.votes - a.votes;
       });
 
