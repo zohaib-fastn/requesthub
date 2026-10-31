@@ -33,15 +33,14 @@ const OWNER_SLUG = "__owner__";
 // Bidirectional: a Linear state change updates the matching idea's status in
 // either direction (forward or backward), and an idea's status change pushed
 // from RequestHub updates the matching Linear ticket's state the same way -
-// see requesthub-update-status's syncToLinearState handling. "canceled" has no
-// mapping at all: it intentionally leaves the idea's RequestHub status
-// untouched rather than guessing at one.
+// see requesthub-update-status's syncToLinearState handling.
 const LINEAR_STATE_TYPE_TO_STATUS = {
   triage: "planned",
   backlog: "planned",
   unstarted: "planned",
   started: "in_progress",
   completed: "shipped",
+  canceled: "declined",
 };
 
 const PLANS = [
@@ -91,7 +90,8 @@ const DESIGN_TOKENS = `
     .icon { width: 15px; height: 15px; display: inline-block; vertical-align: -3px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 `;
 const FASTN_BASE = "https://api.fastn.dev";
-const STATUSES = ["under_review", "planned", "in_progress", "shipped"];
+const STATUSES = ["under_review", "planned", "in_progress", "shipped", "declined"];
+const DEFAULT_STATUS_LABELS = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped", declined: "Declined" };
 const DEFAULT_LINEAR_TEAM_ID = "6a0351f8-9f72-49b7-a11a-753726597688";
 // A real Notion DATABASE id (not a page) - each shipped idea becomes its own
 // structured row via createDatabaseRowPlainText, not a paragraph appended to a page.
@@ -963,12 +963,12 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
 
       <div class="card">
         <h2>Pipeline status names</h2>
-        <p class="hint">Call your four stages whatever makes sense for your team. For the three that have a matching Linear ticket state, pick exactly which state - your internal team can keep other states in between (code review, QA, etc.) that stay invisible to this board.</p>
-        ${["under_review", "planned", "in_progress", "shipped"]
+        <p class="hint">Call your stages whatever makes sense for your team. For the three that have a matching Linear ticket state, pick exactly which state - your internal team can keep other states in between (code review, QA, etc.) that stay invisible to this board. "Declined" is a terminal status for won't-fix/duplicate items and maps to Linear's "Canceled" type automatically - no picker needed.</p>
+        ${["under_review", "planned", "in_progress", "shipped", "declined"]
           .map((key) => {
-            const defaultLabel = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped" }[key];
+            const defaultLabel = DEFAULT_STATUS_LABELS[key];
             const currentLabel = settings.statusLabels?.[key] || defaultLabel;
-            const needsLinear = key !== "under_review";
+            const needsLinear = key === "planned" || key === "in_progress" || key === "shipped";
             return `<div class="field">
           <label>${defaultLabel}</label>
           <input name="statusLabel_${key}" value="${escapeHtml(currentLabel)}" placeholder="${defaultLabel}" />
@@ -1431,6 +1431,7 @@ function boardPage(customerSlug, isOwner) {
     .status-chip.planned { background-color: var(--info-tint); color: var(--info); }
     .status-chip.in_progress { background-color: var(--warn-tint); color: var(--warn); }
     .status-chip.shipped { background-color: var(--good-tint); color: var(--good); }
+    .status-chip.declined { background-color: var(--bad-tint); color: var(--bad); }
 
     .meta-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
     .comment-count { display: inline-flex; align-items: center; gap: 4px; color: var(--text-faint); font-size: 12px; font-weight: 500; background: none; border: none; cursor: pointer; font-family: inherit; padding: 0; }
@@ -1628,7 +1629,7 @@ function boardPage(customerSlug, isOwner) {
     const statuses = ${JSON.stringify(STATUSES)};
     const categories = ["Feature", "Bug", "Feedback"];
     let allIdeas = [];
-    let statusLabels = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped" };
+    let statusLabels = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped", declined: "Declined" };
     let activeCategory = "all";
     let activeSort = "votes";
 
@@ -2006,8 +2007,9 @@ function roadmapPage(customerSlug, isOwner) {
     .page { max-width: 1100px; margin: 0 auto; padding: 24px; }
     .page-title { font-size: 20px; font-weight: 700; margin: 0 0 18px; }
 
-    .board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; align-items: start; }
-    @media (max-width: 900px) { .board { grid-template-columns: 1fr; } }
+    .board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; align-items: start; }
+    @media (max-width: 1100px) { .board { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 600px) { .board { grid-template-columns: 1fr; } }
 
     .column { background: var(--surface-2); border-radius: var(--radius-card); padding: 14px; }
     .column-header { display: flex; align-items: center; gap: 8px; padding: 0 2px 12px; }
@@ -2016,6 +2018,7 @@ function roadmapPage(customerSlug, isOwner) {
     .column-dot.planned { background: var(--info); }
     .column-dot.in_progress { background: var(--warn); }
     .column-dot.shipped { background: var(--good); }
+    .column-dot.declined { background: var(--bad); }
     .column-title { font-weight: 700; font-size: 13.5px; color: var(--text); }
     .column-count { margin-left: auto; background: var(--card); color: var(--text-faint); font-size: 11.5px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
 
@@ -2059,7 +2062,7 @@ function roadmapPage(customerSlug, isOwner) {
 
   <script>
     var customerSlug = ${JSON.stringify(customerSlug)};
-    var DEFAULT_LABELS = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped" };
+    var DEFAULT_LABELS = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped", declined: "Declined" };
 
     function escapeHtml(s) {
       var d = document.createElement('div');
@@ -2069,7 +2072,7 @@ function roadmapPage(customerSlug, isOwner) {
 
     function render(ideas, statusLabels) {
       var labels = statusLabels || DEFAULT_LABELS;
-      var COLUMNS = ["under_review", "planned", "in_progress", "shipped"].map(function (key) {
+      var COLUMNS = ["under_review", "planned", "in_progress", "shipped", "declined"].map(function (key) {
         return { key: key, label: labels[key] || DEFAULT_LABELS[key] };
       });
       var board = document.getElementById('board');
@@ -2140,8 +2143,9 @@ function adminPage(customerSlug, isOwner) {
 
     .empty { color: var(--text-faint); font-size: 13.5px; text-align: center; padding: 40px 16px; }
 
-    .board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; align-items: start; }
-    @media (max-width: 1000px) { .board { grid-template-columns: 1fr; } }
+    .board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; align-items: start; }
+    @media (max-width: 1200px) { .board { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 600px) { .board { grid-template-columns: 1fr; } }
 
     .column { background: var(--surface-2); border-radius: var(--radius-card); padding: 12px; min-height: 80px; transition: background-color .12s ease; }
     .column.drag-over { background: var(--accent-tint); }
@@ -2151,6 +2155,7 @@ function adminPage(customerSlug, isOwner) {
     .column-dot.planned { background: var(--info); }
     .column-dot.in_progress { background: var(--warn); }
     .column-dot.shipped { background: var(--good); }
+    .column-dot.declined { background: var(--bad); }
     .column-title { font-weight: 700; font-size: 13px; color: var(--text); }
     .column-count { margin-left: auto; background: var(--card); color: var(--text-faint); font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
 
@@ -2203,7 +2208,7 @@ function adminPage(customerSlug, isOwner) {
     const customerSlug = ${JSON.stringify(customerSlug)};
     const statuses = ${JSON.stringify(STATUSES)};
     let allIdeas = [];
-    let STATUS_LABELS = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped" };
+    let STATUS_LABELS = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped", declined: "Declined" };
     let draggingIdeaId = null;
 
     function escapeHtml(s) {
@@ -3176,6 +3181,7 @@ export default {
           planned: form.get("statusLabel_planned") || "",
           in_progress: form.get("statusLabel_in_progress") || "",
           shipped: form.get("statusLabel_shipped") || "",
+          declined: form.get("statusLabel_declined") || "",
         };
         linearStateIds = {
           planned: form.get("linearStateId_planned") || "",
