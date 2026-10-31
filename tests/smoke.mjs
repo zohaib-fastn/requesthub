@@ -80,6 +80,21 @@ async function run() {
     assert(Array.isArray(body.ideas), "ideas was not an array");
     assert(body.ideas.some((i) => i.id === ideaId), "newly submitted idea not found in list");
     assert(body.statusLabels && body.statusLabels.declined, "statusLabels missing the declined status");
+    assert(Array.isArray(body.categories) && body.categories.length > 0, "categories missing or empty");
+  });
+  await check("submit idea with a custom (non-default) category", async () => {
+    const r = await fetch(BASE_URL + "/api/ideas", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        customerSlug: CUSTOMER,
+        title: "[smoke-test] custom category " + Date.now(),
+        category: "Smoke Test Category",
+      }),
+    });
+    const body = await r.json();
+    assert(body.ok === true, "custom-category submit failed: " + JSON.stringify(body));
+    assert(body.idea.category === "Smoke Test Category", "category not stored as submitted");
   });
   await check("idea has a permalink page", async () => {
     const r = await fetch(BASE_URL + "/b/" + CUSTOMER + "/ideas/" + ideaId);

@@ -983,6 +983,14 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
           .join("")}
       </div>
 
+      <div class="card">
+        <h2>Categories</h2>
+        <p class="hint">What kind of feedback can customers submit? Comma-separated - rename, add, or remove to match your team's vocabulary (e.g. "Integration request", "Mobile"). Defaults to Feature, Bug, Feedback.</p>
+        <div class="field">
+          <input name="categories" value="${escapeHtml((settings.categories || ["Feature", "Bug", "Feedback"]).join(", "))}" placeholder="Feature, Bug, Feedback" />
+        </div>
+      </div>
+
       <button type="submit" class="btn-submit" id="settingsSaveBtn">Save settings</button>
       <span id="settingsSaveNote" class="hint" style="margin-left: 10px;"></span>
     </form>
@@ -1046,12 +1054,15 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
           if (key.indexOf('statusLabel_') === 0) statusLabels[key.slice('statusLabel_'.length)] = value;
           if (key.indexOf('linearStateId_') === 0) linearStateIds[key.slice('linearStateId_'.length)] = value;
         });
+        var categoriesRaw = formData.get('categories') || '';
+        var categories = categoriesRaw.split(',').map(function (c) { return c.trim(); }).filter(Boolean);
         var body = {
           slackChannel: formData.get('slackChannel') || '',
           linearTeamId: formData.get('linearTeamId') || '',
           notionPageId: formData.get('notionPageId') || '',
           statusLabels: statusLabels,
           linearStateIds: linearStateIds,
+          categories: categories,
         };
 
         btn.disabled = true;
@@ -1422,9 +1433,6 @@ function boardPage(customerSlug, isOwner) {
       display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-pill);
       font-weight: 600; font-size: 11px;
     }
-    .chip.cat-Feature { background: var(--accent-tint); color: var(--accent); }
-    .chip.cat-Bug { background: var(--bad-tint); color: var(--bad); }
-    .chip.cat-Feedback { background: var(--good-tint); color: var(--good); }
 
     .status-chip {
       font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-pill); text-transform: capitalize;
@@ -1630,11 +1638,24 @@ function boardPage(customerSlug, isOwner) {
   <script>
     const customerSlug = ${JSON.stringify(customerSlug)};
     const statuses = ${JSON.stringify(STATUSES)};
-    const categories = ["Feature", "Bug", "Feedback"];
+    let categories = ["Feature", "Bug", "Feedback"];
     let allIdeas = [];
     let statusLabels = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped", declined: "Declined" };
     let activeCategory = "all";
     let activeSort = "trending";
+
+    var CATEGORY_PALETTE = [
+      { bg: 'var(--accent-tint)', fg: 'var(--accent)' },
+      { bg: 'var(--bad-tint)', fg: 'var(--bad)' },
+      { bg: 'var(--good-tint)', fg: 'var(--good)' },
+      { bg: 'var(--warn-tint)', fg: 'var(--warn)' },
+      { bg: 'var(--info-tint)', fg: 'var(--info)' },
+    ];
+    function categoryColor(name) {
+      var hash = 0;
+      for (var i = 0; i < (name || '').length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+      return CATEGORY_PALETTE[hash % CATEGORY_PALETTE.length];
+    }
 
     function trendingScore(idea) {
       // Hacker-News-style time decay: rewards votes earned by newer ideas over
@@ -1690,7 +1711,7 @@ function boardPage(customerSlug, isOwner) {
           '<div class="idea-title">' + escapeHtml(i.title) + '</div>' +
           (i.description ? '<div class="idea-desc">' + escapeHtml(i.description) + '</div>' : '') +
           '<div class="meta">' +
-          '<span class="chip cat-' + i.category + '">' + (ICONS[i.category] || '') + i.category + '</span>' +
+          '<span class="chip" style="background:' + categoryColor(i.category).bg + ';color:' + categoryColor(i.category).fg + '">' + (ICONS[i.category] || '') + escapeHtml(i.category) + '</span>' +
           '<span class="chip status-chip ' + i.status + '">' + (statusLabels[i.status] || i.status.replace('_', ' ')) + '</span>' +
           '<span class="meta-right">' +
           '<button class="comment-count" data-idea-id="' + i.id + '">' + ICONS.comment + '<span class="cc-num">Comments</span></button>' +
@@ -1775,7 +1796,7 @@ function boardPage(customerSlug, isOwner) {
       );
       nav.innerHTML = items.map(function (it) {
         return '<button class="nav-item' + (activeCategory === it.key ? ' active' : '') + '" data-cat="' + it.key + '">' +
-          it.icon + '<span>' + it.label + '</span><span class="count">' + counts[it.key] + '</span></button>';
+          (it.icon || '') + '<span>' + escapeHtml(it.label) + '</span><span class="count">' + counts[it.key] + '</span></button>';
       }).join('');
       nav.querySelectorAll('.nav-item').forEach(function (btn) {
         btn.addEventListener('click', function () {
@@ -1831,12 +1852,22 @@ function boardPage(customerSlug, isOwner) {
       return d.innerHTML;
     }
 
+    function populateCategorySelect() {
+      const sel = document.getElementById('category');
+      if (!sel) return;
+      const current = sel.value;
+      sel.innerHTML = categories.map(function (c) { return '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</option>'; }).join('');
+      if (categories.indexOf(current) !== -1) sel.value = current;
+    }
+
     function load() {
       fetch('/api/ideas?customer=' + encodeURIComponent(customerSlug))
         .then(function (r) { return r.json(); })
         .then(function (d) {
           allIdeas = d.ideas || [];
           if (d.statusLabels) statusLabels = d.statusLabels;
+          if (d.categories && d.categories.length) categories = d.categories;
+          populateCategorySelect();
           render();
         });
     }
@@ -1923,9 +1954,6 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
     .idea-desc { color: var(--text-muted); font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
     .idea-meta { margin-top: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: var(--radius-pill); font-weight: 600; font-size: 11px; }
-    .chip.cat-Feature { background: var(--accent-tint); color: var(--accent); }
-    .chip.cat-Bug { background: var(--bad-tint); color: var(--bad); }
-    .chip.cat-Feedback { background: var(--good-tint); color: var(--good); }
     .chip.status-chip.under_review { background-color: var(--surface-3); color: var(--text-muted); }
     .chip.status-chip.planned { background-color: var(--info-tint); color: var(--info); }
     .chip.status-chip.in_progress { background-color: var(--warn-tint); color: var(--warn); }
@@ -1974,6 +2002,19 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
     var ideaId = ${JSON.stringify(String(ideaId))};
     var isAdmin = ${isAdmin ? "true" : "false"};
     var statusLabels = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped", declined: "Declined" };
+
+    var CATEGORY_PALETTE = [
+      { bg: 'var(--accent-tint)', fg: 'var(--accent)' },
+      { bg: 'var(--bad-tint)', fg: 'var(--bad)' },
+      { bg: 'var(--good-tint)', fg: 'var(--good)' },
+      { bg: 'var(--warn-tint)', fg: 'var(--warn)' },
+      { bg: 'var(--info-tint)', fg: 'var(--info)' },
+    ];
+    function categoryColor(name) {
+      var hash = 0;
+      for (var i = 0; i < (name || '').length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+      return CATEGORY_PALETTE[hash % CATEGORY_PALETTE.length];
+    }
 
     function escapeHtml(s) {
       var d = document.createElement('div');
@@ -2027,7 +2068,7 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
         '<div class="idea-title">' + escapeHtml(idea.title) + '</div>' +
         (idea.description ? '<div class="idea-desc">' + escapeHtml(idea.description) + '</div>' : '') +
         '<div class="idea-meta">' +
-        '<span class="chip cat-' + idea.category + '">' + idea.category + '</span>' +
+        '<span class="chip" style="background:' + categoryColor(idea.category).bg + ';color:' + categoryColor(idea.category).fg + '">' + escapeHtml(idea.category) + '</span>' +
         '<span class="chip status-chip ' + idea.status + '">' + (statusLabels[idea.status] || idea.status) + '</span>' +
         badges.join('') +
         '<span style="color:var(--text-faint);font-size:11px;margin-left:auto;">' + date + '</span>' +
@@ -2304,17 +2345,11 @@ function roadmapPage(customerSlug, isOwner) {
     .column-count { margin-left: auto; background: var(--card); color: var(--text-faint); font-size: 11.5px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
 
     .card { background: var(--card); border: 1px solid var(--border); border-left-width: 3px; border-radius: 12px; padding: 13px 14px 13px 12px; margin-bottom: 8px; display: flex; gap: 10px; align-items: flex-start; }
-    .card.cat-Feature { border-left-color: var(--accent); }
-    .card.cat-Bug { border-left-color: var(--bad); }
-    .card.cat-Feedback { border-left-color: var(--good); }
     .card-body { flex: 1; min-width: 0; }
     .card-title { font-weight: 600; font-size: 13.5px; color: var(--text); }
     .card-desc { color: var(--text-muted); font-size: 12px; margin-top: 4px; line-height: 1.4; }
     .card-meta { margin-top: 10px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-pill); font-weight: 600; font-size: 10.5px; }
-    .chip.cat-Feature { background: var(--accent-tint); color: var(--accent); }
-    .chip.cat-Bug { background: var(--bad-tint); color: var(--bad); }
-    .chip.cat-Feedback { background: var(--good-tint); color: var(--good); }
     .vote-box {
       flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
       width: 32px; border: 1px solid var(--border); border-radius: 8px; padding: 4px 0; color: var(--text-faint);
@@ -2345,6 +2380,19 @@ function roadmapPage(customerSlug, isOwner) {
     var customerSlug = ${JSON.stringify(customerSlug)};
     var DEFAULT_LABELS = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped", declined: "Declined" };
 
+    var CATEGORY_PALETTE = [
+      { bg: 'var(--accent-tint)', fg: 'var(--accent)' },
+      { bg: 'var(--bad-tint)', fg: 'var(--bad)' },
+      { bg: 'var(--good-tint)', fg: 'var(--good)' },
+      { bg: 'var(--warn-tint)', fg: 'var(--warn)' },
+      { bg: 'var(--info-tint)', fg: 'var(--info)' },
+    ];
+    function categoryColor(name) {
+      var hash = 0;
+      for (var i = 0; i < (name || '').length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+      return CATEGORY_PALETTE[hash % CATEGORY_PALETTE.length];
+    }
+
     function escapeHtml(s) {
       var d = document.createElement('div');
       d.innerText = s || '';
@@ -2362,12 +2410,13 @@ function roadmapPage(customerSlug, isOwner) {
           .sort(function (a, b) { return b.votes - a.votes; });
         var cards = items.length
           ? items.map(function (i) {
-              return '<div class="card cat-' + i.category + '">' +
+              var catColor = categoryColor(i.category);
+              return '<div class="card" style="border-left-color:' + catColor.fg + '">' +
                 '<div class="card-body">' +
                 '<div class="card-title">' + escapeHtml(i.title) + '</div>' +
                 (i.description ? '<div class="card-desc">' + escapeHtml(i.description) + '</div>' : '') +
                 '<div class="card-meta">' +
-                '<span class="chip cat-' + i.category + '">' + i.category + '</span>' +
+                '<span class="chip" style="background:' + catColor.bg + ';color:' + catColor.fg + '">' + escapeHtml(i.category) + '</span>' +
                 '</div>' +
                 '</div>' +
                 '<div class="vote-box"><svg class="icon" viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15"/></svg><span class="vote-num">' + i.votes + '</span></div>' +
@@ -2441,9 +2490,6 @@ function adminPage(customerSlug, isOwner) {
     .column-count { margin-left: auto; background: var(--card); color: var(--text-faint); font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
 
     .card { position: relative; background: var(--card); border: 1px solid var(--border); border-left-width: 3px; border-radius: 12px; padding: 12px 28px 12px 11px; margin-bottom: 8px; cursor: grab; }
-    .card.cat-Feature { border-left-color: var(--accent); }
-    .card.cat-Bug { border-left-color: var(--bad); }
-    .card.cat-Feedback { border-left-color: var(--good); }
     .card.dragging { opacity: 0.4; }
     .card-delete-btn {
       position: absolute; top: 6px; right: 6px; width: 18px; height: 18px; line-height: 16px; text-align: center;
@@ -2455,9 +2501,6 @@ function adminPage(customerSlug, isOwner) {
     .card-meta { margin-top: 9px; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 
     .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-weight: 600; font-size: 10.5px; }
-    .chip.cat-Feature { background: var(--accent-tint); color: var(--accent); }
-    .chip.cat-Bug { background: var(--bad-tint); color: var(--bad); }
-    .chip.cat-Feedback { background: var(--good-tint); color: var(--good); }
     .chip.badge { background: var(--surface-3); color: var(--text-muted); text-decoration: none; }
     .chip.badge:hover { color: var(--text); }
     .card-votes { color: var(--text-faint); font-size: 10.5px; margin-left: auto; font-weight: 600; }
@@ -2495,13 +2538,36 @@ function adminPage(customerSlug, isOwner) {
     const customerSlug = ${JSON.stringify(customerSlug)};
     const statuses = ${JSON.stringify(STATUSES)};
     let allIdeas = [];
+    let categories = ["Feature", "Bug", "Feedback"];
     let STATUS_LABELS = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped", declined: "Declined" };
     let draggingIdeaId = null;
+
+    var CATEGORY_PALETTE = [
+      { bg: 'var(--accent-tint)', fg: 'var(--accent)' },
+      { bg: 'var(--bad-tint)', fg: 'var(--bad)' },
+      { bg: 'var(--good-tint)', fg: 'var(--good)' },
+      { bg: 'var(--warn-tint)', fg: 'var(--warn)' },
+      { bg: 'var(--info-tint)', fg: 'var(--info)' },
+    ];
+    function categoryColor(name) {
+      var hash = 0;
+      for (var i = 0; i < (name || '').length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+      return CATEGORY_PALETTE[hash % CATEGORY_PALETTE.length];
+    }
 
     function escapeHtml(s) {
       const d = document.createElement('div');
       d.innerText = s || '';
       return d.innerHTML;
+    }
+
+    function populateCategorySelect() {
+      const sel = document.getElementById('category');
+      if (!sel) return;
+      const current = sel.value;
+      sel.innerHTML = '<option value="all">All categories</option>' +
+        categories.map(function (c) { return '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</option>'; }).join('');
+      sel.value = current || 'all';
     }
 
     function changeStatus(ideaId, status) {
@@ -2533,12 +2599,13 @@ function adminPage(customerSlug, isOwner) {
               if (i.linear_issue_url) badges.push('<a class="chip badge" href="' + i.linear_issue_url + '" target="_blank" rel="noopener">Linear &#8599;</a>');
               if (i.notion_archived_at) badges.push('<span class="chip badge">Notion</span>');
               badges.push('<a class="chip badge" href="/b/' + encodeURIComponent(customerSlug) + '/ideas/' + i.id + '" title="Open and reply">Reply</a>');
-              return '<div class="card cat-' + i.category + '" draggable="true" data-idea-id="' + i.id + '">' +
+              var catColor = categoryColor(i.category);
+              return '<div class="card" style="border-left-color:' + catColor.fg + '" draggable="true" data-idea-id="' + i.id + '">' +
                 '<button type="button" class="card-delete-btn" data-idea-id="' + i.id + '" title="Delete">&times;</button>' +
                 '<div class="card-title">' + escapeHtml(i.title) + '</div>' +
                 (i.description ? '<div class="card-desc">' + escapeHtml(i.description) + '</div>' : '') +
                 '<div class="card-meta">' +
-                '<span class="chip cat-' + i.category + '">' + i.category + '</span>' +
+                '<span class="chip" style="background:' + catColor.bg + ';color:' + catColor.fg + '">' + escapeHtml(i.category) + '</span>' +
                 badges.join('') +
                 '<span class="card-votes">' + i.votes + ' votes</span>' +
                 '</div>' +
@@ -2612,6 +2679,7 @@ function adminPage(customerSlug, isOwner) {
         .then(function (d) {
           allIdeas = d.ideas || [];
           if (d.statusLabels) STATUS_LABELS = d.statusLabels;
+          if (d.categories && d.categories.length) { categories = d.categories; populateCategorySelect(); }
           render();
         });
     }
@@ -3468,6 +3536,7 @@ export default {
       let notionPageId = "";
       let statusLabels = {};
       let linearStateIds = {};
+      let categories = [];
       if (contentType.includes("application/json")) {
         let body;
         try {
@@ -3480,6 +3549,7 @@ export default {
         notionPageId = body.notionPageId || "";
         statusLabels = body.statusLabels || {};
         linearStateIds = body.linearStateIds || {};
+        categories = Array.isArray(body.categories) ? body.categories : [];
       } else {
         const form = await request.formData();
         slackChannel = form.get("slackChannel") || "";
@@ -3497,6 +3567,7 @@ export default {
           in_progress: form.get("linearStateId_in_progress") || "",
           shipped: form.get("linearStateId_shipped") || "",
         };
+        categories = (form.get("categories") || "").split(",").map((c) => c.trim()).filter(Boolean);
       }
       try {
         await callWorkflow(env, SET_CUSTOMER_SETTINGS_WORKFLOW_ID, {
@@ -3506,6 +3577,7 @@ export default {
           notionPageId,
           statusLabels,
           linearStateIds,
+          categories,
         });
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
@@ -3752,11 +3824,13 @@ export default {
           ideas = ideas.filter(function (i) { return i.category === categoryFilter; });
         }
         let statusLabels = null;
+        let categories = null;
         try {
           const settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug });
           statusLabels = settings?.statusLabels || null;
+          categories = settings?.categories || null;
         } catch {}
-        return json({ ...data, ideas, statusLabels });
+        return json({ ...data, ideas, statusLabels, categories });
       } catch (err) {
         return json({ ok: false, error: err.message, ideas: [] }, 502);
       }
