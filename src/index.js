@@ -860,6 +860,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
         <code id="embedSnippet">${escapeHtml(embedSnippet)}</code>
         <button type="button" class="btn-copy" id="copyEmbedBtn">Copy</button>
       </div>
+      <p class="hint" style="margin-top: 10px;">Optional: add <code style="background:none;border:none;padding:0;display:inline;">data-color="#ff6600"</code> to match your brand, and <code style="background:none;border:none;padding:0;display:inline;">data-position="bottom-left"</code> / <code style="background:none;border:none;padding:0;display:inline;">"top-left"</code> / <code style="background:none;border:none;padding:0;display:inline;">"top-right"</code> to move it (defaults to bottom-right, current purple).</p>
     </div>
   </div>
   <script>
@@ -1928,17 +1929,33 @@ function embedJs() {
   if (!cs) return;
   var origin = new URL(cs.src).origin;
   var customer = cs.getAttribute('data-customer') || 'demo';
+  var color = cs.getAttribute('data-color') || '';
+  var position = cs.getAttribute('data-position') || 'bottom-right';
   var COLLAPSED = { width: '64px', height: '64px' };
   var EXPANDED = { width: '380px', height: 'min(600px, calc(100vh - 40px))' };
+  var POSITIONS = {
+    'bottom-right': { bottom: '20px', right: '20px' },
+    'bottom-left': { bottom: '20px', left: '20px' },
+    'top-right': { top: '20px', right: '20px' },
+    'top-left': { top: '20px', left: '20px' },
+  };
+  var corner = POSITIONS[position] || POSITIONS['bottom-right'];
+  var cornerCss = Object.keys(corner).map(function (k) { return k + ':' + corner[k]; });
+
+  var widgetUrl = origin + '/widget.html?customer=' + encodeURIComponent(customer);
+  if (color) widgetUrl += '&color=' + encodeURIComponent(color);
 
   var iframe = document.createElement('iframe');
-  iframe.src = origin + '/widget.html?customer=' + encodeURIComponent(customer);
+  iframe.src = widgetUrl;
   iframe.title = 'Feedback';
-  iframe.style.cssText = [
-    'position:fixed', 'bottom:20px', 'right:20px', 'border:none', 'background:transparent',
-    'z-index:2147483000', 'width:' + COLLAPSED.width, 'height:' + COLLAPSED.height,
-    'transition:width .15s ease,height .15s ease', 'color-scheme:normal',
-  ].join(';');
+  iframe.style.cssText = ['position:fixed']
+    .concat(cornerCss)
+    .concat([
+      'border:none', 'background:transparent', 'z-index:2147483000',
+      'width:' + COLLAPSED.width, 'height:' + COLLAPSED.height,
+      'transition:width .15s ease,height .15s ease', 'color-scheme:normal',
+    ])
+    .join(';');
   iframe.setAttribute('allowtransparency', 'true');
   document.body.appendChild(iframe);
 
@@ -1955,7 +1972,8 @@ function embedJs() {
 })();`;
 }
 
-function widgetPage(customerSlug) {
+function widgetPage(customerSlug, color) {
+  const accent = color || "#6d5ef8";
   return `<!doctype html>
 <html>
 <head>
@@ -1964,9 +1982,10 @@ function widgetPage(customerSlug) {
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; background: transparent; font-family: -apple-system, sans-serif; overflow: hidden; }
     .launcher {
-      width: 64px; height: 64px; border-radius: 50%; background: #6d5ef8; border: none; cursor: pointer;
+      width: 64px; height: 64px; border-radius: 50%; background: ${accent}; border: none; cursor: pointer;
       display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 20px rgba(0,0,0,.25);
     }
+    .launcher:hover { filter: brightness(0.93); }
     .launcher svg { width: 26px; height: 26px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     .panel {
       display: none; flex-direction: column; height: 100%; background: #16151d; color: #f3f2f7;
@@ -1987,10 +2006,10 @@ function widgetPage(customerSlug) {
     }
     .field textarea { resize: vertical; min-height: 60px; }
     .btn-submit {
-      width: 100%; background: #6d5ef8; color: #fff; border: none; padding: 10px; border-radius: 8px;
+      width: 100%; background: ${accent}; color: #fff; border: none; padding: 10px; border-radius: 8px;
       font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
     }
-    .btn-submit:hover { background: #5b4de3; }
+    .btn-submit:hover { filter: brightness(0.9); }
     .success { text-align: center; padding: 20px 0; }
     .success .check { font-size: 32px; margin-bottom: 8px; }
     .panel-footer { padding: 10px 16px; border-top: 1px solid #2a2935; text-align: center; }
@@ -2368,7 +2387,9 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/widget.html") {
       const customerSlug = url.searchParams.get("customer") || "demo";
-      return html(widgetPage(customerSlug));
+      const rawColor = url.searchParams.get("color") || "";
+      const color = /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(rawColor) ? rawColor : null;
+      return html(widgetPage(customerSlug, color));
     }
 
     if (request.method === "GET" && url.pathname === "/signup") {
