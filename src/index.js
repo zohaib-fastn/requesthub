@@ -84,6 +84,26 @@ const DESIGN_TOKENS = `
       --radius-pill: 5px;
       --radius-btn: 10px;
     }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #17151f; --card: #201e2c; --surface-2: #231f30; --surface-3: #2b2739; --border: #332f41;
+        --text: #efedf6; --text-muted: #b2aec2; --text-faint: #716d81;
+        --accent: #9089ff; --accent-hover: #a39cff; --accent-tint: rgba(144, 137, 255, 0.2);
+        --good: #4ade80; --good-tint: rgba(74, 222, 128, 0.16);
+        --warn: #fbbf24; --warn-tint: rgba(251, 191, 36, 0.16);
+        --bad: #f87171; --bad-tint: rgba(248, 113, 113, 0.16);
+        --info: #60a5fa; --info-tint: rgba(96, 165, 250, 0.16);
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #17151f; --card: #201e2c; --surface-2: #231f30; --surface-3: #2b2739; --border: #332f41;
+      --text: #efedf6; --text-muted: #b2aec2; --text-faint: #716d81;
+      --accent: #9089ff; --accent-hover: #a39cff; --accent-tint: rgba(144, 137, 255, 0.2);
+      --good: #4ade80; --good-tint: rgba(74, 222, 128, 0.16);
+      --warn: #fbbf24; --warn-tint: rgba(251, 191, 36, 0.16);
+      --bad: #f87171; --bad-tint: rgba(248, 113, 113, 0.16);
+      --info: #60a5fa; --info-tint: rgba(96, 165, 250, 0.16);
+    }
     * { box-sizing: border-box; }
     body {
       margin: 0; background: var(--bg); color: var(--text);
@@ -91,6 +111,40 @@ const DESIGN_TOKENS = `
       -webkit-font-smoothing: antialiased;
     }
     .icon { width: 15px; height: 15px; display: inline-block; vertical-align: -3px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .theme-toggle {
+      background: none; border: 1px solid var(--border); border-radius: 8px; width: 30px; height: 30px;
+      display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-muted); flex-shrink: 0;
+    }
+    .theme-toggle:hover { color: var(--text); background: var(--surface-2); }
+`;
+const THEME_TOGGLE_SCRIPT = `
+    (function () {
+      var ICON_SUN = '<svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>';
+      var ICON_MOON = '<svg class="icon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+      function applyTheme(theme) {
+        if (theme) document.documentElement.setAttribute('data-theme', theme);
+        else document.documentElement.removeAttribute('data-theme');
+        var btn = document.getElementById('themeToggle');
+        if (!btn) return;
+        var isDark = theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        btn.innerHTML = isDark ? ICON_SUN : ICON_MOON;
+      }
+      var saved = null;
+      try { saved = localStorage.getItem('requesthub_theme'); } catch {}
+      applyTheme(saved);
+      document.addEventListener('DOMContentLoaded', function () {
+        var btn = document.getElementById('themeToggle');
+        if (!btn) return;
+        applyTheme(saved);
+        btn.addEventListener('click', function () {
+          var current = document.documentElement.getAttribute('data-theme');
+          var isDark = current === 'dark' || (!current && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          var next = isDark ? 'light' : 'dark';
+          try { localStorage.setItem('requesthub_theme', next); } catch {}
+          applyTheme(next);
+        });
+      });
+    })();
 `;
 const FASTN_BASE = "https://api.fastn.dev";
 const STATUSES = ["under_review", "planned", "in_progress", "shipped", "declined"];
@@ -1377,6 +1431,7 @@ function boardPage(customerSlug, isOwner) {
   <title>${escapeHtml(customerSlug)} - RequestHub</title>
   <link rel="icon" href="${favicon}" />
   ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
     .topbar {
@@ -1558,6 +1613,7 @@ function boardPage(customerSlug, isOwner) {
     <a class="top-tab" href="/b/${encodeURIComponent(customerSlug)}/roadmap">Roadmap</a>
     <a class="top-tab" href="/b/${encodeURIComponent(customerSlug)}/changelog">Changelog</a>
     <div class="nav-right">
+      <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
       ${isOwner ? `<a class="nav-admin-link owner-link" href="/owner">&larr; Owner console</a>` : ""}
       <a class="nav-admin-link" href="/b/${encodeURIComponent(customerSlug)}/admin">Admin</a>
     </div>
@@ -2364,6 +2420,7 @@ function roadmapPage(customerSlug, isOwner) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Roadmap - ${escapeHtml(customerSlug)} - RequestHub</title>
   ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
     .topbar {
@@ -2421,6 +2478,7 @@ function roadmapPage(customerSlug, isOwner) {
     <a class="top-tab active" href="/b/${encodeURIComponent(customerSlug)}/roadmap">Roadmap</a>
     <a class="top-tab" href="/b/${encodeURIComponent(customerSlug)}/changelog">Changelog</a>
     <div class="nav-right">
+      <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
       ${isOwner ? `<a class="nav-admin-link owner-link" href="/owner">&larr; Owner console</a>` : ""}
       <a class="nav-admin-link" href="/b/${encodeURIComponent(customerSlug)}/admin">Admin</a>
     </div>
@@ -2503,6 +2561,7 @@ function changelogPage(customerSlug, isOwner) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Changelog - ${escapeHtml(customerSlug)} - RequestHub</title>
   ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
     .topbar {
@@ -2541,6 +2600,7 @@ function changelogPage(customerSlug, isOwner) {
     <a class="top-tab" href="/b/${encodeURIComponent(customerSlug)}/roadmap">Roadmap</a>
     <a class="top-tab active" href="/b/${encodeURIComponent(customerSlug)}/changelog">Changelog</a>
     <div class="nav-right">
+      <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
       ${isOwner ? `<a class="nav-admin-link owner-link" href="/owner">&larr; Owner console</a>` : ""}
       <a class="nav-admin-link" href="/b/${encodeURIComponent(customerSlug)}/admin">Admin</a>
     </div>
@@ -2609,6 +2669,7 @@ function adminPage(customerSlug, isOwner) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Triage - RequestHub</title>
   ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
     .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
@@ -2699,6 +2760,7 @@ function adminPage(customerSlug, isOwner) {
       <a href="/api/customers/${encodeURIComponent(customerSlug)}/export.csv">Export CSV</a>
       <a href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
       <a href="/b/${encodeURIComponent(customerSlug)}/billing">Billing</a>
+      <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
       <a class="logout" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
     </nav>
   </div>
