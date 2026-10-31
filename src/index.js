@@ -1607,6 +1607,7 @@ function boardPage(customerSlug, isOwner) {
             <button class="filter-tab active" data-sort="trending">Trending</button>
             <button class="filter-tab" data-sort="votes">Most voted</button>
             <button class="filter-tab" data-sort="new">Newest</button>
+            <button class="filter-tab" data-sort="comments">Most commented</button>
           </div>
           <select id="statusFilter"><option value="all">All statuses</option></select>
           <input id="search" placeholder="Search feedback..." />
@@ -1711,6 +1712,7 @@ function boardPage(customerSlug, isOwner) {
       ideas = ideas.slice().sort(function (a, b) {
         if (sort === 'new') return new Date(b.created_at) - new Date(a.created_at);
         if (sort === 'trending') return trendingScore(b) - trendingScore(a);
+        if (sort === 'comments') return (b.comment_count || 0) - (a.comment_count || 0);
         return b.votes - a.votes;
       });
 
@@ -1736,7 +1738,7 @@ function boardPage(customerSlug, isOwner) {
           '<span class="chip" style="background:' + categoryColor(i.category).bg + ';color:' + categoryColor(i.category).fg + '">' + (ICONS[i.category] || '') + escapeHtml(i.category) + '</span>' +
           '<span class="chip status-chip ' + i.status + '">' + (statusLabels[i.status] || i.status.replace('_', ' ')) + '</span>' +
           '<span class="meta-right">' +
-          '<button class="comment-count" data-idea-id="' + i.id + '">' + ICONS.comment + '<span class="cc-num">Comments</span></button>' +
+          '<button class="comment-count" data-idea-id="' + i.id + '">' + ICONS.comment + '<span class="cc-num">' + (i.comment_count ? i.comment_count + ' Comment' + (i.comment_count === 1 ? '' : 's') : 'Comments') + '</span></button>' +
           '<a class="comment-count" href="/b/' + encodeURIComponent(customerSlug) + '/ideas/' + i.id + '" title="Shareable link to this idea">&#128279;</a>' +
           '</span>' +
           '</div>' +

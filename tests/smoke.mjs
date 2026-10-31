@@ -174,6 +174,13 @@ async function run() {
     assert(mine.is_team === false, "anonymous comment was flagged is_team");
     assert(mine.internal === false, "anonymous comment was flagged internal");
   });
+  await check("idea list reflects the new comment count", async () => {
+    const r = await fetch(BASE_URL + "/api/ideas?customer=" + CUSTOMER);
+    const body = await r.json();
+    const mine = (body.ideas || []).find((i) => i.id === ideaId);
+    assert(mine, "idea not found in list");
+    assert(mine.comment_count === 1, "expected comment_count 1, got " + mine.comment_count);
+  });
   await check("status history reachable", async () => {
     const r = await fetch(BASE_URL + "/api/ideas/" + ideaId + "/history");
     const body = await r.json();
