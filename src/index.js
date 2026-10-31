@@ -4144,6 +4144,7 @@ export default {
           body: body.body,
           isTeam,
           internal: isTeam && Boolean(body.internal),
+          ideaUrl: isTeam ? `${url.origin}/b/${encodeURIComponent(commentCustomerSlug)}/ideas/${commentsMatch[1]}` : "",
         });
         return json(data);
       } catch (err) {
