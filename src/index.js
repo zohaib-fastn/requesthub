@@ -1888,7 +1888,7 @@ function boardPage(customerSlug, isOwner) {
 </html>`;
 }
 
-function ideaDetailPage(customerSlug, ideaId, isOwner) {
+function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
   return `<!doctype html>
 <html>
 <head>
@@ -1937,11 +1937,17 @@ function ideaDetailPage(customerSlug, ideaId, isOwner) {
     .comment { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
     .comment:last-child { border-bottom: none; }
     .comment-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--accent-tint); color: var(--accent); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; flex-shrink: 0; }
+    .comment.is-team .comment-avatar { background: var(--accent); color: #fff; }
+    .comment.is-internal { background: var(--warn-tint); border-radius: 8px; padding: 10px; }
     .comment-body-text { font-size: 13px; color: var(--text); line-height: 1.5; }
     .comment-author { font-weight: 700; margin-right: 6px; }
-    .comment-form { display: flex; gap: 8px; margin-top: 14px; }
+    .comment-badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; margin-right: 6px; vertical-align: 1px; }
+    .comment-badge.team { background: var(--accent-tint); color: var(--accent); }
+    .comment-badge.internal { background: var(--warn); color: #fff; }
+    .comment-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; align-items: center; }
     .comment-form input { flex: 1; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 9px 12px; font-size: 13px; font-family: inherit; }
     .comment-form button { background: var(--accent); color: #fff; border: none; padding: 9px 16px; border-radius: var(--radius-btn); font-weight: 600; font-size: 13px; cursor: pointer; font-family: inherit; }
+    .comment-form label { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; white-space: nowrap; }
     .empty { color: var(--text-faint); font-size: 13px; padding: 8px 0; }
   </style>
 </head>
@@ -1961,6 +1967,7 @@ function ideaDetailPage(customerSlug, ideaId, isOwner) {
   <script>
     var customerSlug = ${JSON.stringify(customerSlug)};
     var ideaId = ${JSON.stringify(String(ideaId))};
+    var isAdmin = ${isAdmin ? "true" : "false"};
     var statusLabels = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped", declined: "Declined" };
 
     function escapeHtml(s) {
@@ -2028,6 +2035,7 @@ function ideaDetailPage(customerSlug, ideaId, isOwner) {
         '<div class="comment-form">' +
         '<input id="commentName" placeholder="Your name" style="max-width:140px;" />' +
         '<input id="commentBody" placeholder="Add a comment..." />' +
+        (isAdmin ? '<label><input type="checkbox" id="commentInternal" /> Internal note</label>' : '') +
         '<button type="button" id="commentBtn">Post</button>' +
         '</div>' +
         '</div>' +
@@ -2051,18 +2059,25 @@ function ideaDetailPage(customerSlug, ideaId, isOwner) {
       });
 
       document.getElementById('commentBtn').addEventListener('click', function () {
-        var name = document.getElementById('commentName').value.trim() || 'Anonymous';
+        var name = document.getElementById('commentName').value.trim() || (isAdmin ? 'Team' : 'Anonymous');
         var bodyInput = document.getElementById('commentBody');
         var body = bodyInput.value.trim();
+        var internalCheckbox = document.getElementById('commentInternal');
         if (!body) return;
         fetch('/api/ideas/' + idea.id + '/comments', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ authorName: name, body: body }),
+          body: JSON.stringify({
+            authorName: name,
+            body: body,
+            customerSlug: customerSlug,
+            internal: internalCheckbox ? internalCheckbox.checked : false,
+          }),
         })
           .then(function (r) { return r.json(); })
           .then(function () {
             bodyInput.value = '';
+            if (internalCheckbox) internalCheckbox.checked = false;
             loadComments(idea.id);
           });
       });
@@ -2072,7 +2087,7 @@ function ideaDetailPage(customerSlug, ideaId, isOwner) {
 
     function loadComments(id) {
       var listEl = document.getElementById('commentsList');
-      fetch('/api/ideas/' + id + '/comments')
+      fetch('/api/ideas/' + id + '/comments?customer=' + encodeURIComponent(customerSlug))
         .then(function (r) { return r.json(); })
         .then(function (d) {
           var comments = d.comments || [];
@@ -2082,9 +2097,12 @@ function ideaDetailPage(customerSlug, ideaId, isOwner) {
           }
           listEl.innerHTML = comments.map(function (c) {
             var initial = (c.author_name || '?').trim().charAt(0).toUpperCase() || '?';
-            return '<div class="comment">' +
+            var classes = 'comment' + (c.is_team ? ' is-team' : '') + (c.internal ? ' is-internal' : '');
+            var badges = (c.is_team ? '<span class="comment-badge team">Team</span>' : '') +
+              (c.internal ? '<span class="comment-badge internal">Internal</span>' : '');
+            return '<div class="' + classes + '">' +
               '<div class="comment-avatar">' + escapeHtml(initial) + '</div>' +
-              '<div class="comment-body-text"><span class="comment-author">' + escapeHtml(c.author_name) + '</span>' + escapeHtml(c.body) + '</div>' +
+              '<div class="comment-body-text">' + badges + '<span class="comment-author">' + escapeHtml(c.author_name) + '</span>' + escapeHtml(c.body) + '</div>' +
               '</div>';
           }).join('');
         });
@@ -2485,6 +2503,7 @@ function adminPage(customerSlug, isOwner) {
               if (i.submitter_email) badges.push('<span class="chip badge">' + escapeHtml(i.submitter_email) + '</span>');
               if (i.linear_issue_url) badges.push('<a class="chip badge" href="' + i.linear_issue_url + '" target="_blank" rel="noopener">Linear &#8599;</a>');
               if (i.notion_archived_at) badges.push('<span class="chip badge">Notion</span>');
+              badges.push('<a class="chip badge" href="/b/' + encodeURIComponent(customerSlug) + '/ideas/' + i.id + '" title="Open and reply">Reply</a>');
               return '<div class="card cat-' + i.category + '" draggable="true" data-idea-id="' + i.id + '">' +
                 '<button type="button" class="card-delete-btn" data-idea-id="' + i.id + '" title="Delete">&times;</button>' +
                 '<div class="card-title">' + escapeHtml(i.title) + '</div>' +
@@ -3138,7 +3157,8 @@ export default {
     const ideaDetailMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/ideas\/(\d+)\/?$/);
     if (request.method === "GET" && ideaDetailMatch) {
       const isOwner = await requireAuth(request, env, OWNER_SLUG);
-      return html(ideaDetailPage(ideaDetailMatch[1], ideaDetailMatch[2], isOwner));
+      const isAdmin = await requireAuth(request, env, ideaDetailMatch[1]);
+      return html(ideaDetailPage(ideaDetailMatch[1], ideaDetailMatch[2], isOwner, isAdmin));
     }
 
     const loginMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/login\/?$/);
@@ -3771,8 +3791,13 @@ export default {
 
     const commentsMatch = url.pathname.match(/^\/api\/ideas\/(\d+)\/comments$/);
     if (request.method === "GET" && commentsMatch) {
+      const viewerCustomerSlug = (url.searchParams.get("customer") || "").trim();
+      const isTeamViewer = viewerCustomerSlug ? await requireAuth(request, env, viewerCustomerSlug) : false;
       try {
-        const data = await callWorkflow(env, LIST_COMMENTS_WORKFLOW_ID, { ideaId: Number(commentsMatch[1]) });
+        const data = await callWorkflow(env, LIST_COMMENTS_WORKFLOW_ID, {
+          ideaId: Number(commentsMatch[1]),
+          includeInternal: isTeamViewer,
+        });
         return json(data);
       } catch (err) {
         return json({ ok: false, error: err.message, comments: [] }, 502);
@@ -3785,12 +3810,16 @@ export default {
       } catch {
         return json({ ok: false, error: "invalid JSON body" }, 400);
       }
+      const commentCustomerSlug = (body.customerSlug || "").trim();
+      const isTeam = commentCustomerSlug ? await requireAuth(request, env, commentCustomerSlug) : false;
       try {
         const data = await callWorkflow(env, ADD_COMMENT_WORKFLOW_ID, {
           ideaId: Number(commentsMatch[1]),
           authorName: body.authorName || "Anonymous",
           authorEmail: body.authorEmail || "",
           body: body.body,
+          isTeam,
+          internal: isTeam && Boolean(body.internal),
         });
         return json(data);
       } catch (err) {
