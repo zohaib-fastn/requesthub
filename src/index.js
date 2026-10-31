@@ -19,7 +19,24 @@ const VERIFY_MAGIC_LINK_WORKFLOW_ID = "wf_068beffe1147";
 const LIST_USERS_WORKFLOW_ID = "wf_dc3c708922b8";
 const ADD_USER_WORKFLOW_ID = "wf_598118e16bcb";
 const REMOVE_USER_WORKFLOW_ID = "wf_dccff8e93fa9";
+const REGISTER_LINEAR_WEBHOOK_WORKFLOW_ID = "wf_55825cf21bfc";
+const UNREGISTER_LINEAR_WEBHOOK_WORKFLOW_ID = "wf_9633b10b01af";
+const FIND_IDEA_BY_LINEAR_ISSUE_WORKFLOW_ID = "wf_bc7a52df867b";
+const GET_LINEAR_WEBHOOK_SECRET_WORKFLOW_ID = "wf_c376837b8860";
 const OWNER_SLUG = "__owner__";
+
+// Forward-only ratchet: a Linear state change only ever moves an idea's status
+// UP this list, never back - so a ticket accidentally dragged backward in
+// Linear (or reopened) can't flap the board. "canceled" has no mapping at all:
+// it intentionally leaves the idea's RequestHub status untouched.
+const STATUS_RANK = { under_review: 0, planned: 1, in_progress: 2, shipped: 3 };
+const LINEAR_STATE_TYPE_TO_STATUS = {
+  triage: "planned",
+  backlog: "planned",
+  unstarted: "planned",
+  started: "in_progress",
+  completed: "shipped",
+};
 
 const PLANS = [
   { id: "free", name: "Free", price: "$0", period: "/mo", blurb: "Try RequestHub with your own board.", features: ["1 board", "Unlimited ideas & votes", "Community support"] },
@@ -214,6 +231,22 @@ async function verifySessionToken(env, token, customerSlug) {
   } catch {
     return false;
   }
+}
+
+async function verifyLinearWebhookSignature(secret, rawBody, signatureHeader) {
+  if (!secret || !signatureHeader) return false;
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const expected = toHex(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody)));
+  if (expected.length !== signatureHeader.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ signatureHeader.charCodeAt(i);
+  return diff === 0;
 }
 
 function sessionCookieName(customerSlug) {
@@ -873,6 +906,17 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
     </form>
 
     <div class="card">
+      <h2>Real-time sync from Linear</h2>
+      ${settings.linearTeamId
+        ? `<p class="hint">When a ticket's status changes in Linear, mirror it back onto the matching idea here automatically - no need to flip it by hand in both places. Sync only ever moves an idea forward (Planned &rarr; In Progress &rarr; Shipped); it never reopens or reverts one.</p>
+      <p class="hint" id="linearSyncStatus">${settings.linearWebhookEnabled
+        ? `<strong style="color: var(--good);">On</strong> - watching your "${escapeHtml(settings.linearTeamId)}" team for status changes.`
+        : `<strong style="color: var(--text-faint);">Off</strong>.`}</p>
+      <button type="button" class="btn-submit" id="linearSyncToggleBtn" style="${settings.linearWebhookEnabled ? "background: var(--bad);" : ""}">${settings.linearWebhookEnabled ? "Turn off" : "Turn on"}</button>`
+        : `<p class="hint">Connect a Linear team above and save, then come back here to turn on real-time sync.</p>`}
+    </div>
+
+    <div class="card">
       <h2>Embed on your own site</h2>
       <p class="hint">Add this one line to your website to get a floating feedback button. It works on any domain - no CORS setup, no account, nothing else to configure. Submissions land straight on your board above.</p>
       <div class="embed-code">
@@ -997,6 +1041,31 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
           }
         });
     });
+
+    var linearSyncToggleBtn = document.getElementById('linearSyncToggleBtn');
+    if (linearSyncToggleBtn) {
+      linearSyncToggleBtn.addEventListener('click', function () {
+        var enabled = ${settings.linearWebhookEnabled ? "true" : "false"};
+        var action = enabled ? 'disable' : 'enable';
+        linearSyncToggleBtn.disabled = true;
+        linearSyncToggleBtn.textContent = enabled ? 'Turning off...' : 'Turning on...';
+        fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/linear-sync', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: action }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d.ok) {
+              window.location.reload();
+            } else {
+              linearSyncToggleBtn.disabled = false;
+              linearSyncToggleBtn.textContent = enabled ? 'Turn off' : 'Turn on';
+              alert(d.error || 'Could not change sync status.');
+            }
+          });
+      });
+    }
   </script>
 </body>
 </html>`;
@@ -2894,6 +2963,127 @@ export default {
       try {
         const data = await callWorkflow(env, LIST_DESTINATIONS_WORKFLOW_ID, { kind }, endOrgId);
         return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
+    const linearSyncMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/linear-sync$/);
+    if (request.method === "POST" && linearSyncMatch) {
+      const customerSlug = linearSyncMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ ok: false, error: "invalid JSON body" }, 400);
+      }
+      const endOrgId = await getTenantOrgId(env, customerSlug);
+      if (!endOrgId) {
+        return json({ ok: false, error: "no connected workspace for this customer yet" }, 404);
+      }
+      if (body.action === "disable") {
+        try {
+          const data = await callWorkflow(env, UNREGISTER_LINEAR_WEBHOOK_WORKFLOW_ID, { customerSlug }, endOrgId);
+          return json(data);
+        } catch (err) {
+          return json({ ok: false, error: err.message }, 502);
+        }
+      }
+      if (body.action === "enable") {
+        let settings = {};
+        try {
+          settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug });
+        } catch {}
+        if (!settings?.linearTeamId) {
+          return json({ ok: false, error: "connect a Linear team first" }, 400);
+        }
+        const secret = toHex(crypto.getRandomValues(new Uint8Array(32)));
+        try {
+          const data = await callWorkflow(
+            env,
+            REGISTER_LINEAR_WEBHOOK_WORKFLOW_ID,
+            {
+              customerSlug,
+              teamId: settings.linearTeamId,
+              webhookUrl: `${url.origin}/api/webhooks/linear/${encodeURIComponent(customerSlug)}`,
+              secret,
+            },
+            endOrgId
+          );
+          return json(data);
+        } catch (err) {
+          return json({ ok: false, error: err.message }, 502);
+        }
+      }
+      return json({ ok: false, error: "action must be 'enable' or 'disable'" }, 400);
+    }
+
+    const linearWebhookMatch = url.pathname.match(/^\/api\/webhooks\/linear\/([a-z0-9-]+)$/);
+    if (request.method === "POST" && linearWebhookMatch) {
+      const customerSlug = linearWebhookMatch[1];
+      const rawBody = await request.text();
+      const signature = request.headers.get("linear-signature") || "";
+
+      let secret = null;
+      try {
+        const secretData = await callWorkflow(env, GET_LINEAR_WEBHOOK_SECRET_WORKFLOW_ID, { customerSlug });
+        secret = secretData?.secret || null;
+      } catch {}
+      if (!secret || !(await verifyLinearWebhookSignature(secret, rawBody, signature))) {
+        return json({ ok: false, error: "invalid signature" }, 401);
+      }
+
+      let payload;
+      try {
+        payload = JSON.parse(rawBody);
+      } catch {
+        return json({ ok: false, error: "invalid JSON body" }, 400);
+      }
+
+      // Linear expects a fast 200 ack - every branch below that isn't a bad
+      // signature returns ok even when there's nothing to do, so a retry storm
+      // from Linear's side never happens because we 4xx/5xx on no-op events.
+      if (payload.type !== "Issue" || !payload.data?.id) {
+        return json({ ok: true, skipped: "not an issue event" });
+      }
+      const stateType = payload.data?.state?.type;
+      const mappedStatus = LINEAR_STATE_TYPE_TO_STATUS[stateType];
+      if (!mappedStatus) {
+        return json({ ok: true, skipped: "no forward status mapping for state type " + stateType });
+      }
+
+      try {
+        const found = await callWorkflow(env, FIND_IDEA_BY_LINEAR_ISSUE_WORKFLOW_ID, {
+          customerSlug,
+          linearIssueId: payload.data.id,
+        });
+        if (!found?.found) {
+          return json({ ok: true, skipped: "no matching idea for this Linear issue" });
+        }
+        if (STATUS_RANK[mappedStatus] <= STATUS_RANK[found.currentStatus]) {
+          return json({ ok: true, skipped: "not a forward status move" });
+        }
+
+        const endOrgId = await getTenantOrgId(env, customerSlug);
+        let settings = {};
+        try {
+          settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug });
+        } catch {}
+        const data = await callWorkflow(
+          env,
+          UPDATE_STATUS_WORKFLOW_ID,
+          {
+            ideaId: found.ideaId,
+            status: mappedStatus,
+            linearTeamId: settings?.linearTeamId || DEFAULT_LINEAR_TEAM_ID,
+            notionPageId: settings?.notionPageId || DEFAULT_NOTION_PAGE_ID,
+          },
+          endOrgId
+        );
+        return json({ ok: true, data });
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
       }
