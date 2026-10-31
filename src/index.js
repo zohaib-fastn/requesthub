@@ -1025,7 +1025,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
         <code id="embedSnippet">${escapeHtml(embedSnippet)}</code>
         <button type="button" class="btn-copy" id="copyEmbedBtn">Copy</button>
       </div>
-      <p class="hint" style="margin-top: 10px;">Optional: add <code style="background:none;border:none;padding:0;display:inline;">data-color="#ff6600"</code> to match your brand, and <code style="background:none;border:none;padding:0;display:inline;">data-position="bottom-left"</code> / <code style="background:none;border:none;padding:0;display:inline;">"top-left"</code> / <code style="background:none;border:none;padding:0;display:inline;">"top-right"</code> to move it (defaults to bottom-right, current purple).</p>
+      <p class="hint" style="margin-top: 10px;">Optional: add <code style="background:none;border:none;padding:0;display:inline;">data-color="#ff6600"</code> to match your brand, and <code style="background:none;border:none;padding:0;display:inline;">data-position="bottom-left"</code> / <code style="background:none;border:none;padding:0;display:inline;">"top-left"</code> / <code style="background:none;border:none;padding:0;display:inline;">"top-right"</code> to move it (defaults to bottom-right, current purple). Already have your own feedback button somewhere on your site? Add <code style="background:none;border:none;padding:0;display:inline;">data-target="#your-button-id"</code> and that button opens the panel directly - no floating bubble at all.</p>
     </div>
 
     <div class="card">
@@ -2710,8 +2710,12 @@ function embedJs() {
   var customer = cs.getAttribute('data-customer') || 'demo';
   var color = cs.getAttribute('data-color') || '';
   var position = cs.getAttribute('data-position') || 'bottom-right';
-  var COLLAPSED = { width: '64px', height: '64px' };
+  var targetSelector = cs.getAttribute('data-target') || '';
   var EXPANDED = { width: '380px', height: 'min(600px, calc(100vh - 40px))' };
+  // In target mode there's no floating bubble to show before it's opened -
+  // the customer's own button is the only trigger - so "collapsed" means
+  // zero-size and click-through rather than a visible 64px circle.
+  var COLLAPSED = targetSelector ? { width: '0px', height: '0px' } : { width: '64px', height: '64px' };
   var POSITIONS = {
     'bottom-right': { bottom: '20px', right: '20px' },
     'bottom-left': { bottom: '20px', left: '20px' },
@@ -2734,6 +2738,7 @@ function embedJs() {
       'width:' + COLLAPSED.width, 'height:' + COLLAPSED.height,
       'transition:width .15s ease,height .15s ease', 'color-scheme:normal',
     ])
+    .concat(targetSelector ? ['pointer-events:none'] : [])
     .join(';');
   iframe.setAttribute('allowtransparency', 'true');
   document.body.appendChild(iframe);
@@ -2743,11 +2748,28 @@ function embedJs() {
     if (e.data.type === 'open') {
       iframe.style.width = EXPANDED.width;
       iframe.style.height = EXPANDED.height;
+      if (targetSelector) iframe.style.pointerEvents = 'auto';
     } else if (e.data.type === 'close') {
       iframe.style.width = COLLAPSED.width;
       iframe.style.height = COLLAPSED.height;
+      if (targetSelector) iframe.style.pointerEvents = 'none';
     }
   });
+
+  if (targetSelector) {
+    // The customer's own element is the trigger - we can't rely on it being
+    // present at script-load time (it may render after this tag, or later
+    // via their own JS), so delegate from document instead of querying once.
+    document.addEventListener('click', function (e) {
+      var el = e.target.closest ? e.target.closest(targetSelector) : null;
+      if (!el) return;
+      e.preventDefault();
+      iframe.style.width = EXPANDED.width;
+      iframe.style.height = EXPANDED.height;
+      iframe.style.pointerEvents = 'auto';
+      iframe.contentWindow.postMessage({ source: 'requesthub-host', type: 'open' }, origin);
+    });
+  }
 })();`;
 }
 
@@ -2828,6 +2850,15 @@ function widgetPage(customerSlug, color) {
       document.body.classList.add('open');
       post('open');
     });
+
+    // Lets the host page open this panel from its own button instead of our
+    // floating launcher (embed.js's data-target mode) - the host can't reach
+    // across the iframe boundary to click our launcher for us, so it asks.
+    window.addEventListener('message', function (e) {
+      if (!e.data || e.data.source !== 'requesthub-host') return;
+      if (e.data.type === 'open') document.body.classList.add('open');
+    });
+
     document.getElementById('closeBtn').addEventListener('click', function () {
       document.body.classList.remove('open');
       post('close');
