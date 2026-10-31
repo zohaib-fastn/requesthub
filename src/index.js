@@ -30,6 +30,7 @@ const LIST_WEBHOOKS_FOR_DELIVERY_WORKFLOW_ID = "wf_17330509843e";
 const RECORD_WEBHOOK_DELIVERY_WORKFLOW_ID = "wf_f4502de11768";
 const DELETE_IDEA_WORKFLOW_ID = "wf_90a8f1268843";
 const LIST_STATUS_HISTORY_WORKFLOW_ID = "wf_144ac631f830";
+const LIST_CHANGELOG_WORKFLOW_ID = "wf_69d695b3974e";
 const OWNER_SLUG = "__owner__";
 
 // Bidirectional: a Linear state change updates the matching idea's status in
@@ -1551,6 +1552,7 @@ function boardPage(customerSlug, isOwner) {
     <div class="brand">${escapeHtml(customerSlug)}</div>
     <a class="top-tab active" href="/b/${encodeURIComponent(customerSlug)}">Feedback</a>
     <a class="top-tab" href="/b/${encodeURIComponent(customerSlug)}/roadmap">Roadmap</a>
+    <a class="top-tab" href="/b/${encodeURIComponent(customerSlug)}/changelog">Changelog</a>
     <div class="nav-right">
       ${isOwner ? `<a class="nav-admin-link owner-link" href="/owner">&larr; Owner console</a>` : ""}
       <a class="nav-admin-link" href="/b/${encodeURIComponent(customerSlug)}/admin">Admin</a>
@@ -2377,6 +2379,7 @@ function roadmapPage(customerSlug, isOwner) {
     <div class="brand">${escapeHtml(customerSlug)}</div>
     <a class="top-tab" href="/b/${encodeURIComponent(customerSlug)}">Feedback</a>
     <a class="top-tab active" href="/b/${encodeURIComponent(customerSlug)}/roadmap">Roadmap</a>
+    <a class="top-tab" href="/b/${encodeURIComponent(customerSlug)}/changelog">Changelog</a>
     <div class="nav-right">
       ${isOwner ? `<a class="nav-admin-link owner-link" href="/owner">&larr; Owner console</a>` : ""}
       <a class="nav-admin-link" href="/b/${encodeURIComponent(customerSlug)}/admin">Admin</a>
@@ -2447,6 +2450,112 @@ function roadmapPage(customerSlug, isOwner) {
     fetch('/api/ideas?customer=' + encodeURIComponent(customerSlug))
       .then(function (r) { return r.json(); })
       .then(function (d) { render(d.ideas || [], d.statusLabels); });
+  </script>
+</body>
+</html>`;
+}
+
+function changelogPage(customerSlug, isOwner) {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Changelog - ${escapeHtml(customerSlug)} - RequestHub</title>
+  ${DESIGN_FONT_LINK}
+  <style>
+    ${DESIGN_TOKENS}
+    .topbar {
+      background: var(--card); border-bottom: 1px solid var(--border);
+      padding: 0 24px; display: flex; align-items: center; gap: 4px; height: 56px;
+    }
+    .logo-mark { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+    .brand { font-weight: 700; font-size: 14px; margin-right: 14px; }
+    .top-tab { color: var(--text-muted); text-decoration: none; font-size: 13.5px; font-weight: 600; padding: 8px 12px; border-radius: 8px; }
+    .top-tab:hover { color: var(--text); background: var(--surface-2); }
+    .top-tab.active { color: var(--accent); background: var(--accent-tint); }
+    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .nav-admin-link { color: var(--text-muted); text-decoration: none; font-size: 13px; font-weight: 600; }
+    .nav-admin-link:hover { color: var(--text); }
+    .nav-admin-link.owner-link { color: var(--accent); }
+
+    .page { max-width: 720px; margin: 0 auto; padding: 32px 24px; }
+    .page-title { font-size: 22px; font-weight: 700; margin: 0 0 6px; }
+    .page-sub { color: var(--text-muted); font-size: 13.5px; margin: 0 0 28px; }
+
+    .entry { display: flex; gap: 20px; padding: 0 0 28px; margin-bottom: 28px; border-bottom: 1px solid var(--border); }
+    .entry:last-child { border-bottom: none; }
+    .entry-date { flex-shrink: 0; width: 100px; color: var(--text-faint); font-size: 12px; padding-top: 2px; }
+    .entry-body { flex: 1; min-width: 0; }
+    .entry-title { font-size: 16px; font-weight: 700; margin: 0 0 6px; }
+    .entry-desc { color: var(--text-muted); font-size: 13.5px; line-height: 1.6; white-space: pre-wrap; }
+    .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: var(--radius-pill); font-weight: 600; font-size: 11px; margin-bottom: 8px; }
+    .empty { color: var(--text-faint); font-size: 13.5px; text-align: center; padding: 60px 16px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo-mark">R</div>
+    <div class="brand">${escapeHtml(customerSlug)}</div>
+    <a class="top-tab" href="/b/${encodeURIComponent(customerSlug)}">Feedback</a>
+    <a class="top-tab" href="/b/${encodeURIComponent(customerSlug)}/roadmap">Roadmap</a>
+    <a class="top-tab active" href="/b/${encodeURIComponent(customerSlug)}/changelog">Changelog</a>
+    <div class="nav-right">
+      ${isOwner ? `<a class="nav-admin-link owner-link" href="/owner">&larr; Owner console</a>` : ""}
+      <a class="nav-admin-link" href="/b/${encodeURIComponent(customerSlug)}/admin">Admin</a>
+    </div>
+  </div>
+
+  <div class="page">
+    <h1 class="page-title">What's new</h1>
+    <p class="page-sub">Everything we've shipped, most recent first.</p>
+    <div id="list"><div class="empty">Loading...</div></div>
+  </div>
+
+  <script>
+    var customerSlug = ${JSON.stringify(customerSlug)};
+
+    function escapeHtml(s) {
+      var d = document.createElement('div');
+      d.innerText = s || '';
+      return d.innerHTML;
+    }
+
+    var CATEGORY_PALETTE = [
+      { bg: 'var(--accent-tint)', fg: 'var(--accent)' },
+      { bg: 'var(--bad-tint)', fg: 'var(--bad)' },
+      { bg: 'var(--good-tint)', fg: 'var(--good)' },
+      { bg: 'var(--warn-tint)', fg: 'var(--warn)' },
+      { bg: 'var(--info-tint)', fg: 'var(--info)' },
+    ];
+    function categoryColor(name) {
+      var hash = 0;
+      for (var i = 0; i < (name || '').length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+      return CATEGORY_PALETTE[hash % CATEGORY_PALETTE.length];
+    }
+
+    fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/changelog')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var items = d.items || [];
+        var list = document.getElementById('list');
+        if (!items.length) {
+          list.innerHTML = '<div class="empty">Nothing shipped yet - check back soon.</div>';
+          return;
+        }
+        list.innerHTML = items.map(function (it) {
+          var date = it.shipped_at ? new Date(it.shipped_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+          var cc = categoryColor(it.category);
+          return '<div class="entry">' +
+            '<div class="entry-date">' + date + '</div>' +
+            '<div class="entry-body">' +
+            '<span class="chip" style="background:' + cc.bg + ';color:' + cc.fg + '">' + escapeHtml(it.category) + '</span>' +
+            '<div class="entry-title">' + escapeHtml(it.title) + '</div>' +
+            (it.description ? '<div class="entry-desc">' + escapeHtml(it.description) + '</div>' : '') +
+            '</div>' +
+            '</div>';
+        }).join('');
+      });
   </script>
 </body>
 </html>`;
@@ -2526,6 +2635,7 @@ function adminPage(customerSlug, isOwner) {
     <nav class="nav-right">
       ${isOwner ? `<a class="owner-link" href="/owner">&larr; Owner console</a>` : ""}
       <a href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+      <a href="/b/${encodeURIComponent(customerSlug)}/changelog">Changelog</a>
       <a href="/api/customers/${encodeURIComponent(customerSlug)}/export.csv">Export CSV</a>
       <a href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
       <a href="/b/${encodeURIComponent(customerSlug)}/billing">Billing</a>
@@ -3465,6 +3575,22 @@ export default {
     if (request.method === "GET" && roadmapMatch) {
       const isOwner = await requireAuth(request, env, OWNER_SLUG);
       return html(roadmapPage(roadmapMatch[1], isOwner));
+    }
+
+    const changelogMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/changelog\/?$/);
+    if (request.method === "GET" && changelogMatch) {
+      const isOwner = await requireAuth(request, env, OWNER_SLUG);
+      return html(changelogPage(changelogMatch[1], isOwner));
+    }
+
+    const changelogApiMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/changelog\/?$/);
+    if (request.method === "GET" && changelogApiMatch) {
+      try {
+        const data = await callWorkflow(env, LIST_CHANGELOG_WORKFLOW_ID, { customerSlug: changelogApiMatch[1] });
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message, items: [] }, 502);
+      }
     }
 
     const adminMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/admin\/?$/);

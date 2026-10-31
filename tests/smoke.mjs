@@ -47,6 +47,17 @@ async function run() {
     const r = await fetch(BASE_URL + "/b/" + CUSTOMER + "/roadmap");
     assert(r.status === 200, "status " + r.status);
   });
+  await check("changelog page", async () => {
+    const r = await fetch(BASE_URL + "/b/" + CUSTOMER + "/changelog");
+    assert(r.status === 200, "status " + r.status);
+  });
+  await check("changelog API returns shipped items", async () => {
+    const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/changelog");
+    const body = await r.json();
+    assert(r.status === 200, "status " + r.status);
+    assert(body.ok === true, "changelog call failed: " + JSON.stringify(body));
+    assert(Array.isArray(body.items), "items was not an array");
+  });
   await check("embed.js", async () => {
     const r = await fetch(BASE_URL + "/embed.js");
     assert(r.status === 200, "status " + r.status);
