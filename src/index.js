@@ -325,18 +325,12 @@ function homePage() {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>RequestHub - feedback boards for SaaS teams</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500&display=swap">
+  ${DESIGN_FONT_LINK}
   <style>
-    :root {
-      --bg: #0b0b10; --surface: #16151d; --surface-2: #1d1c26; --surface-3: #252430;
-      --border: #2a2935; --text: #f3f2f7; --text-muted: #9492a3; --text-faint: #65636f;
-      --accent: #6d5ef8; --accent-hover: #5b4de3; --accent-tint: rgba(109, 94, 248, 0.16);
-      --good: #22c58b;
-    }
-    * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--text); font-family: "Inter", -apple-system, sans-serif; line-height: 1.5; }
+    ${DESIGN_TOKENS}
+    body { font-weight: 400; }
     a { color: inherit; }
-    .nav { position: sticky; top: 0; z-index: 10; background: rgba(11,11,16,.85); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    .nav { position: sticky; top: 0; z-index: 10; background: rgba(244,243,247,.85); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
     .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
     .brand { font-weight: 700; font-size: 15px; }
     .nav-right { margin-left: auto; display: flex; align-items: center; gap: 18px; }
@@ -377,9 +371,9 @@ function homePage() {
     .plan-price span { font-size: 13px; font-weight: 500; color: var(--text-muted); }
     .plan-blurb { color: var(--text-muted); font-size: 12.5px; margin-bottom: 16px; line-height: 1.4; }
     .plan-features { list-style: none; padding: 0; margin: 0 0 20px; flex: 1; }
-    .plan-features li { font-size: 13px; color: #c9c7d4; padding: 5px 0 5px 20px; position: relative; }
+    .plan-features li { font-size: 13px; color: var(--text-muted); padding: 5px 0 5px 20px; position: relative; }
     .plan-features li::before { content: "✓"; position: absolute; left: 0; color: var(--good); font-weight: 700; }
-    .plan-btn { display: block; text-align: center; background: var(--accent); color: #fff; text-decoration: none; padding: 10px; border-radius: 8px; font-size: 13.5px; font-weight: 600; }
+    .plan-btn { display: block; text-align: center; background: var(--accent); color: #fff; text-decoration: none; padding: 10px; border-radius: var(--radius-btn); font-size: 13.5px; font-weight: 600; }
     .plan-btn:hover { background: var(--accent-hover); }
 
     .cta-band { max-width: 760px; margin: 0 auto; padding: 50px 24px 100px; text-align: center; }
@@ -470,18 +464,20 @@ function loginLookupPage(errorMsg) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Log in - RequestHub</title>
+  ${DESIGN_FONT_LINK}
   <style>
-    body { margin: 0; background: #0b0b10; color: #f3f2f7; font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-    .card { width: 100%; max-width: 360px; padding: 32px; background: #16151d; border: 1px solid #2a2935; border-radius: 14px; box-sizing: border-box; }
-    .logo-mark { width: 32px; height: 32px; border-radius: 9px; background: #6d5ef8; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; margin-bottom: 14px; }
-    h1 { font-size: 19px; margin: 0 0 6px; }
-    p { color: #9492a3; font-size: 13px; margin: 0 0 18px; line-height: 1.5; }
-    input { width: 100%; background: #1d1c26; border: 1px solid #2a2935; color: #f3f2f7; border-radius: 8px; padding: 10px 12px; font-size: 14px; box-sizing: border-box; margin-bottom: 12px; font-family: inherit; }
-    button { width: 100%; background: #6d5ef8; color: #fff; border: none; padding: 11px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
-    button:hover { background: #5b4de3; }
-    .error { color: #f06a6a; font-size: 12.5px; margin: -4px 0 12px; }
-    .back { display: block; text-align: center; margin-top: 16px; color: #9492a3; font-size: 12.5px; text-decoration: none; }
-    .back:hover { color: #fff; }
+    ${DESIGN_TOKENS}
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { width: 100%; max-width: 360px; padding: 32px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); box-sizing: border-box; }
+    .logo-mark { width: 32px; height: 32px; border-radius: 9px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; margin-bottom: 14px; }
+    h1 { font-size: 19px; margin: 0 0 6px; color: var(--text); }
+    p { color: var(--text-muted); font-size: 13px; margin: 0 0 18px; line-height: 1.5; }
+    input { width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 10px 12px; font-size: 14px; box-sizing: border-box; margin-bottom: 12px; font-family: inherit; }
+    button { width: 100%; background: var(--accent); color: #fff; border: none; padding: 11px; border-radius: var(--radius-btn); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    button:hover { background: var(--accent-hover); }
+    .error { color: var(--bad); font-size: 12.5px; margin: -4px 0 12px; }
+    .back { display: block; text-align: center; margin-top: 16px; color: var(--text-muted); font-size: 12.5px; text-decoration: none; }
+    .back:hover { color: var(--text); }
   </style>
 </head>
 <body>
@@ -515,25 +511,27 @@ function signupPage(errorMsg) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Start your board - RequestHub</title>
+  ${DESIGN_FONT_LINK}
   <style>
-    body { margin: 0; background: #0b0b10; color: #f3f2f7; font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-    .card { width: 100%; max-width: 400px; padding: 32px; background: #16151d; border: 1px solid #2a2935; border-radius: 14px; box-sizing: border-box; }
-    .logo-mark { width: 32px; height: 32px; border-radius: 9px; background: #6d5ef8; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; margin-bottom: 14px; }
-    h1 { font-size: 19px; margin: 0 0 6px; }
-    p { color: #9492a3; font-size: 13px; margin: 0 0 18px; line-height: 1.5; }
-    label { display: block; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: #65636f; margin-bottom: 5px; }
+    ${DESIGN_TOKENS}
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { width: 100%; max-width: 400px; padding: 32px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); box-sizing: border-box; }
+    .logo-mark { width: 32px; height: 32px; border-radius: 9px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; margin-bottom: 14px; }
+    h1 { font-size: 19px; margin: 0 0 6px; color: var(--text); }
+    p { color: var(--text-muted); font-size: 13px; margin: 0 0 18px; line-height: 1.5; }
+    label { display: block; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--text-faint); margin-bottom: 5px; }
     input {
-      width: 100%; background: #1d1c26; border: 1px solid #2a2935; color: #f3f2f7; border-radius: 8px;
+      width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: 8px;
       padding: 10px 12px; font-size: 14px; box-sizing: border-box; margin-bottom: 4px; font-family: inherit;
     }
-    .hint { color: #65636f; font-size: 11.5px; margin: 0 0 16px; }
-    .hint b { color: #9492a3; }
-    button { width: 100%; background: #6d5ef8; color: #fff; border: none; padding: 11px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
-    button:hover { background: #5b4de3; }
-    button:disabled { background: #2a2935; color: #65636f; cursor: default; }
-    .error { color: #f06a6a; font-size: 12.5px; margin: -4px 0 12px; }
-    .back { display: block; text-align: center; margin-top: 16px; color: #9492a3; font-size: 12.5px; text-decoration: none; }
-    .back:hover { color: #fff; }
+    .hint { color: var(--text-faint); font-size: 11.5px; margin: 0 0 16px; }
+    .hint b { color: var(--text-muted); }
+    button { width: 100%; background: var(--accent); color: #fff; border: none; padding: 11px; border-radius: var(--radius-btn); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    button:hover { background: var(--accent-hover); }
+    button:disabled { background: var(--surface-3); color: var(--text-faint); cursor: default; }
+    .error { color: var(--bad); font-size: 12.5px; margin: -4px 0 12px; }
+    .back { display: block; text-align: center; margin-top: 16px; color: var(--text-muted); font-size: 12.5px; text-decoration: none; }
+    .back:hover { color: var(--text); }
   </style>
 </head>
 <body>
@@ -594,19 +592,20 @@ function signupDonePage(customerSlug) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>You're set up - RequestHub</title>
+  ${DESIGN_FONT_LINK}
   <style>
-    body { margin: 0; background: #0b0b10; color: #f3f2f7; font-family: -apple-system, sans-serif; }
+    ${DESIGN_TOKENS}
     .page { max-width: 560px; margin: 0 auto; padding: 48px 24px; }
-    .logo-mark { width: 32px; height: 32px; border-radius: 9px; background: #6d5ef8; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; margin-bottom: 18px; }
-    h1 { font-size: 21px; margin: 0 0 6px; }
-    p { color: #9492a3; font-size: 13.5px; line-height: 1.6; margin: 0 0 24px; }
-    .step { background: #16151d; border: 1px solid #2a2935; border-radius: 12px; padding: 16px 18px; margin-bottom: 12px; }
-    .step-num { display: inline-flex; width: 22px; height: 22px; border-radius: 50%; background: #6d5ef8; color: #fff; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; margin-right: 8px; }
-    .step h3 { display: inline; font-size: 14px; margin: 0; }
-    .step p { margin: 8px 0 10px 30px; color: #9492a3; font-size: 13px; }
-    a.btn { display: inline-block; margin-left: 30px; background: #6d5ef8; color: #fff; text-decoration: none; font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 8px; }
-    a.btn:hover { background: #5b4de3; }
-    code { background: #1d1c26; border: 1px solid #2a2935; border-radius: 6px; padding: 8px 10px; font-size: 12px; display: block; margin: 8px 0 0 30px; overflow-x: auto; white-space: pre; color: #c8c6ff; }
+    .logo-mark { width: 32px; height: 32px; border-radius: 9px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; margin-bottom: 18px; }
+    h1 { font-size: 21px; margin: 0 0 6px; color: var(--text); }
+    p { color: var(--text-muted); font-size: 13.5px; line-height: 1.6; margin: 0 0 24px; }
+    .step { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 16px 18px; margin-bottom: 12px; }
+    .step-num { display: inline-flex; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; margin-right: 8px; }
+    .step h3 { display: inline; font-size: 14px; margin: 0; color: var(--text); }
+    .step p { margin: 8px 0 10px 30px; color: var(--text-muted); font-size: 13px; }
+    a.btn { display: inline-block; margin-left: 30px; background: var(--accent); color: #fff; text-decoration: none; font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: var(--radius-btn); }
+    a.btn:hover { background: var(--accent-hover); }
+    code { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px; display: block; margin: 8px 0 0 30px; overflow-x: auto; white-space: pre; color: var(--accent-hover); }
   </style>
 </head>
 <body>
@@ -661,40 +660,42 @@ function connectPage(customerSlug, endOrgId, token, setupLinks) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Connect your tools - RequestHub</title>
+  ${DESIGN_FONT_LINK}
   <style>
-    body { margin: 0; background: #0b0b10; color: #f3f2f7; font-family: -apple-system, sans-serif; }
-    .topbar { background: #16151d; border-bottom: 1px solid #2a2935; padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
-    .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: #6d5ef8; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+    ${DESIGN_TOKENS}
+    .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
     .brand { font-weight: 700; font-size: 15px; }
-    .back { margin-left: auto; color: #9492a3; font-size: 13px; text-decoration: none; }
+    .back { margin-left: auto; color: var(--text-muted); font-size: 13px; text-decoration: none; }
+    .back:hover { color: var(--text); }
     .page { max-width: 760px; margin: 0 auto; padding: 24px; }
     .hero { margin-bottom: 20px; }
     .hero h1 { font-size: 19px; margin: 0 0 4px; }
-    .hero p { margin: 0; color: #9492a3; font-size: 13.5px; }
+    .hero p { margin: 0; color: var(--text-muted); font-size: 13.5px; }
 
     .tool-card {
-      display: flex; align-items: center; gap: 14px; background: #16151d; border: 1px solid #2a2935;
-      border-radius: 12px; padding: 14px 16px; margin-bottom: 10px;
+      display: flex; align-items: center; gap: 14px; background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius-card); padding: 14px 16px; margin-bottom: 10px;
     }
     .tool-icon {
       width: 36px; height: 36px; border-radius: 9px; color: #fff; font-weight: 700; font-size: 15px;
       display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     }
     .tool-info { flex: 1; min-width: 0; }
-    .tool-name { font-weight: 600; font-size: 14px; }
-    .tool-sub { color: #9492a3; font-size: 12.5px; margin-top: 2px; }
+    .tool-name { font-weight: 600; font-size: 14px; color: var(--text); }
+    .tool-sub { color: var(--text-muted); font-size: 12.5px; margin-top: 2px; }
     .btn-connect {
-      flex-shrink: 0; background: #6d5ef8; color: #fff; text-decoration: none; font-size: 13px;
-      font-weight: 600; padding: 8px 14px; border-radius: 8px;
+      flex-shrink: 0; background: var(--accent); color: #fff; text-decoration: none; font-size: 13px;
+      font-weight: 600; padding: 8px 14px; border-radius: var(--radius-btn);
     }
-    .btn-connect:hover { background: #5b4de3; }
-    .btn-connect.disabled { background: #2a2935; color: #65636f; cursor: default; }
+    .btn-connect:hover { background: var(--accent-hover); }
+    .btn-connect.disabled { background: var(--surface-3); color: var(--text-faint); cursor: default; }
 
     .section-label {
       font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
-      color: #65636f; margin: 28px 0 10px;
+      color: var(--text-faint); margin: 28px 0 10px;
     }
-    .frame-wrap { border: 1px solid #2a2935; border-radius: 14px; overflow: hidden; min-height: 500px; background: #16151d; }
+    .frame-wrap { border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden; min-height: 500px; background: var(--card); }
     .frame-wrap iframe { display: block; width: 100%; height: 500px; border: none; }
   </style>
 </head>
@@ -715,7 +716,7 @@ function connectPage(customerSlug, endOrgId, token, setupLinks) {
 
     <div class="section-label">Connection status</div>
     <div class="frame-wrap">
-      <iframe src="${FASTN_BASE}/api/v1/embed/iframe?token=${encodeURIComponent(token)}&org-id=${encodeURIComponent(endOrgId)}&theme=dark" allow="clipboard-write"></iframe>
+      <iframe src="${FASTN_BASE}/api/v1/embed/iframe?token=${encodeURIComponent(token)}&org-id=${encodeURIComponent(endOrgId)}&theme=light" allow="clipboard-write"></iframe>
     </div>
   </div>
 </body>
@@ -728,12 +729,14 @@ function connectUnavailablePage(customerSlug) {
 <head>
   <meta charset="utf-8" />
   <title>Connect your tools - RequestHub</title>
+  ${DESIGN_FONT_LINK}
   <style>
-    body { margin: 0; background: #0b0b10; color: #f3f2f7; font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    ${DESIGN_TOKENS}
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
     .card { max-width: 420px; text-align: center; padding: 32px; }
-    h1 { font-size: 18px; margin: 0 0 8px; }
-    p { color: #9492a3; font-size: 13.5px; margin: 0 0 16px; }
-    a { color: #6d5ef8; font-size: 13px; text-decoration: none; }
+    h1 { font-size: 18px; margin: 0 0 8px; color: var(--text); }
+    p { color: var(--text-muted); font-size: 13.5px; margin: 0 0 16px; }
+    a { color: var(--accent); font-size: 13px; text-decoration: none; }
   </style>
 </head>
 <body>
@@ -1290,46 +1293,47 @@ function billingPage(customerSlug, currentPlan) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Billing - RequestHub</title>
+  ${DESIGN_FONT_LINK}
   <style>
-    body { margin: 0; background: #0b0b10; color: #f3f2f7; font-family: -apple-system, sans-serif; }
-    .topbar { background: #16151d; border-bottom: 1px solid #2a2935; padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
-    .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: #6d5ef8; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+    ${DESIGN_TOKENS}
+    .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
     .brand { font-weight: 700; font-size: 15px; }
-    .brand .org { color: #65636f; font-weight: 500; }
-    .back { margin-left: auto; color: #9492a3; font-size: 13px; text-decoration: none; }
-    .back:hover { color: #fff; }
+    .brand .org { color: var(--text-faint); font-weight: 500; }
+    .back { margin-left: auto; color: var(--text-muted); font-size: 13px; text-decoration: none; }
+    .back:hover { color: var(--text); }
     .page { max-width: 920px; margin: 0 auto; padding: 32px 24px; }
     .hero { margin-bottom: 8px; }
     .hero h1 { font-size: 21px; margin: 0 0 6px; }
-    .hero p { margin: 0; color: #9492a3; font-size: 13.5px; }
+    .hero p { margin: 0; color: var(--text-muted); font-size: 13.5px; }
     .demo-note {
-      background: rgba(232, 165, 61, 0.1); border: 1px solid rgba(232, 165, 61, 0.3); color: #e8a53d;
+      background: var(--warn-tint); border: 1px solid rgba(217, 119, 6, 0.3); color: var(--warn);
       border-radius: 10px; padding: 10px 14px; font-size: 12.5px; margin: 18px 0 24px;
     }
     .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
     @media (max-width: 760px) { .plans { grid-template-columns: 1fr; } }
     .plan-card {
-      position: relative; background: #16151d; border: 1px solid #2a2935; border-radius: 14px;
+      position: relative; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card);
       padding: 22px 20px; display: flex; flex-direction: column;
     }
-    .plan-card.current { border-color: #6d5ef8; }
+    .plan-card.current { border-color: var(--accent); }
     .current-badge {
-      position: absolute; top: -10px; left: 20px; background: #6d5ef8; color: #fff; font-size: 10.5px;
+      position: absolute; top: -10px; left: 20px; background: var(--accent); color: #fff; font-size: 10.5px;
       font-weight: 700; padding: 3px 10px; border-radius: 999px; text-transform: uppercase; letter-spacing: .03em;
     }
-    .plan-name { font-weight: 700; font-size: 16px; margin-bottom: 6px; }
-    .plan-price { font-size: 26px; font-weight: 700; margin-bottom: 8px; }
-    .plan-price span { font-size: 13px; font-weight: 500; color: #9492a3; }
-    .plan-blurb { color: #9492a3; font-size: 12.5px; margin-bottom: 16px; line-height: 1.4; }
+    .plan-name { font-weight: 700; font-size: 16px; margin-bottom: 6px; color: var(--text); }
+    .plan-price { font-size: 26px; font-weight: 700; margin-bottom: 8px; color: var(--text); }
+    .plan-price span { font-size: 13px; font-weight: 500; color: var(--text-muted); }
+    .plan-blurb { color: var(--text-muted); font-size: 12.5px; margin-bottom: 16px; line-height: 1.4; }
     .plan-features { list-style: none; padding: 0; margin: 0 0 20px; flex: 1; }
-    .plan-features li { font-size: 13px; color: #c9c7d4; padding: 5px 0 5px 20px; position: relative; }
-    .plan-features li::before { content: "✓"; position: absolute; left: 0; color: #22c58b; font-weight: 700; }
+    .plan-features li { font-size: 13px; color: var(--text-muted); padding: 5px 0 5px 20px; position: relative; }
+    .plan-features li::before { content: "✓"; position: absolute; left: 0; color: var(--good); font-weight: 700; }
     .plan-btn {
-      background: #6d5ef8; color: #fff; border: none; padding: 10px; border-radius: 8px; font-size: 13.5px;
+      background: var(--accent); color: #fff; border: none; padding: 10px; border-radius: var(--radius-btn); font-size: 13.5px;
       font-weight: 600; cursor: pointer; font-family: inherit;
     }
-    .plan-btn:hover:not(:disabled) { background: #5b4de3; }
-    .plan-btn:disabled { background: #2a2935; color: #65636f; cursor: default; }
+    .plan-btn:hover:not(:disabled) { background: var(--accent-hover); }
+    .plan-btn:disabled { background: var(--surface-3); color: var(--text-faint); cursor: default; }
   </style>
 </head>
 <body>
@@ -1498,23 +1502,10 @@ function adminPage(customerSlug) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Triage - RequestHub</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+  ${DESIGN_FONT_LINK}
   <style>
-    :root {
-      --bg: #0b0b10; --surface: #16151d; --surface-2: #1d1c26; --surface-3: #252430;
-      --border: #2a2935; --text: #f3f2f7; --text-muted: #9492a3; --text-faint: #65636f;
-      --accent: #6d5ef8; --accent-hover: #5b4de3; --accent-tint: rgba(109, 94, 248, 0.16);
-      --good: #22c58b; --good-tint: rgba(34, 197, 139, 0.14);
-      --warn: #e8a53d; --warn-tint: rgba(232, 165, 61, 0.14);
-      --bad: #f06a6a; --bad-tint: rgba(240, 106, 106, 0.14);
-      --info: #4ea8f0; --info-tint: rgba(78, 168, 240, 0.14);
-      --radius: 12px;
-    }
-    * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--text); font-family: "Inter", -apple-system, sans-serif; font-size: 14px; line-height: 1.5; }
-    .icon { width: 14px; height: 14px; display: inline-block; vertical-align: -2px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-
-    .topbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    ${DESIGN_TOKENS}
+    .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
     .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
     .brand { font-weight: 700; font-size: 15px; }
     .brand .org { color: var(--text-faint); font-weight: 500; }
@@ -1525,17 +1516,17 @@ function adminPage(customerSlug) {
 
     .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
     .stat-card {
-      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card);
       padding: 14px 16px; cursor: pointer; text-align: left; font-family: inherit;
     }
     .stat-card.active { border-color: var(--accent); background: var(--accent-tint); }
-    .stat-count { font-size: 22px; font-weight: 700; font-family: "IBM Plex Mono", monospace; }
+    .stat-count { font-size: 22px; font-weight: 700; font-family: "Manrope", monospace; }
     .stat-label { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
     .stat-card.active .stat-label { color: var(--accent); }
 
     .filters-row { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
     .filters-row input, .filters-row select {
-      background: var(--surface); border: 1px solid var(--border); color: var(--text);
+      background: var(--card); border: 1px solid var(--border); color: var(--text);
       border-radius: 9px; padding: 9px 12px; font-size: 13px; font-family: inherit;
     }
     .filters-row input { flex: 1; min-width: 160px; }
@@ -1544,7 +1535,7 @@ function adminPage(customerSlug) {
 
     .empty { color: var(--text-faint); font-size: 13.5px; text-align: center; padding: 40px 16px; }
 
-    .row { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 13px 16px; margin-bottom: 8px; display: flex; gap: 14px; align-items: flex-start; }
+    .row { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 13px 16px; margin-bottom: 8px; display: flex; gap: 14px; align-items: flex-start; }
     .row-body { flex: 1; min-width: 0; }
     .row-title { font-weight: 600; font-size: 14px; }
     .row-desc { color: var(--text-muted); font-size: 12.5px; margin-top: 2px; }
@@ -1567,10 +1558,10 @@ function adminPage(customerSlug) {
     .status-select.planned { background-color: var(--info-tint); color: var(--info); }
     .status-select.in_progress { background-color: var(--warn-tint); color: var(--warn); }
     .status-select.shipped { background-color: var(--good-tint); color: var(--good); }
-    .status-select option { background: var(--surface); color: var(--text); }
+    .status-select option { background: var(--card); color: var(--text); }
 
     .row-right { flex-shrink: 0; text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
-    .row-votes { font-size: 15px; font-weight: 700; font-family: "IBM Plex Mono", monospace; }
+    .row-votes { font-size: 15px; font-weight: 700; font-family: "Manrope", monospace; }
     .row-date { color: var(--text-faint); font-size: 11px; }
   </style>
 </head>
@@ -1857,23 +1848,25 @@ function loginPage(customerSlug, mode, errorMsg, next) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${isSetup ? "Set admin password" : "Log in"} - RequestHub</title>
+  ${DESIGN_FONT_LINK}
   <style>
-    body { margin: 0; background: #0b0b10; color: #f3f2f7; font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-    .card { width: 100%; max-width: 360px; padding: 32px; background: #16151d; border: 1px solid #2a2935; border-radius: 14px; box-sizing: border-box; }
-    h1 { font-size: 18px; margin: 0 0 6px; }
-    p { color: #9492a3; font-size: 13px; margin: 0 0 18px; line-height: 1.5; }
+    ${DESIGN_TOKENS}
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { width: 100%; max-width: 360px; padding: 32px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); box-sizing: border-box; }
+    h1 { font-size: 18px; margin: 0 0 6px; color: var(--text); }
+    p { color: var(--text-muted); font-size: 13px; margin: 0 0 18px; line-height: 1.5; }
     input {
-      width: 100%; background: #1d1c26; border: 1px solid #2a2935; color: #f3f2f7; border-radius: 8px;
+      width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: 8px;
       padding: 10px 12px; font-size: 14px; box-sizing: border-box; margin-bottom: 12px; font-family: inherit;
     }
     button {
-      width: 100%; background: #6d5ef8; color: #fff; border: none; padding: 11px; border-radius: 8px;
+      width: 100%; background: var(--accent); color: #fff; border: none; padding: 11px; border-radius: var(--radius-btn);
       font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit;
     }
-    button:hover { background: #5b4de3; }
-    .error { color: #f06a6a; font-size: 12.5px; margin: -4px 0 12px; }
-    .back { display: block; text-align: center; margin-top: 16px; color: #9492a3; font-size: 12.5px; text-decoration: none; }
-    .back:hover { color: #fff; }
+    button:hover { background: var(--accent-hover); }
+    .error { color: var(--bad); font-size: 12.5px; margin: -4px 0 12px; }
+    .back { display: block; text-align: center; margin-top: 16px; color: var(--text-muted); font-size: 12.5px; text-decoration: none; }
+    .back:hover { color: var(--text); }
   </style>
 </head>
 <body>
