@@ -17,6 +17,46 @@ const PLANS = [
   { id: "scale", name: "Scale", price: "$99", period: "/mo", blurb: "For teams running this across the whole org.", features: ["Everything in Growth", "Embeddable widget on your site", "Priority support"] },
 ];
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
+
+// Light theme matched against the real app.upvoty.com product (authenticated
+// session, 2026-10-31) - sampled via computed styles, not eyeballed from a
+// screenshot: page bg, card bg/border/radius, accent purple, status/category
+// pill colors and radius, and the Manrope/Montserrat font stack.
+const DESIGN_FONT_LINK =
+  '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap">';
+const DESIGN_TOKENS = `
+    :root {
+      --bg: #f4f3f7;
+      --card: #ffffff;
+      --surface-2: #f7f6fa;
+      --surface-3: #eeecf5;
+      --border: #e7e4f0;
+      --text: #26233a;
+      --text-muted: #5f5c73;
+      --text-faint: #9290a3;
+      --accent: #625afa;
+      --accent-hover: #5345e5;
+      --accent-tint: rgba(98, 90, 250, 0.14);
+      --good: #16a34a;
+      --good-tint: #e7f8ee;
+      --warn: #d97706;
+      --warn-tint: #fdf1de;
+      --bad: #dc2626;
+      --bad-tint: #fdeaea;
+      --info: #2f6fed;
+      --info-tint: #e9f2fe;
+      --radius-card: 16px;
+      --radius-pill: 5px;
+      --radius-btn: 10px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: "Manrope", -apple-system, sans-serif; font-size: 14px; line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    .icon { width: 15px; height: 15px; display: inline-block; vertical-align: -3px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+`;
 const FASTN_BASE = "https://api.fastn.dev";
 const STATUSES = ["under_review", "planned", "in_progress", "shipped"];
 const DEFAULT_LINEAR_TEAM_ID = "6a0351f8-9f72-49b7-a11a-753726597688";
@@ -708,112 +748,81 @@ function connectUnavailablePage(customerSlug) {
 
 function boardPage(customerSlug) {
   const favicon =
-    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236d5ef8'/%3E%3Cpath d='M9 22V10h7.2c2.9 0 4.8 1.7 4.8 4.3 0 1.9-1 3.3-2.7 3.9L22 22h-3.3l-3.2-3.4H12V22H9zm3-5.8h4c1.4 0 2.2-.7 2.2-1.9 0-1.2-.8-1.8-2.2-1.8h-4v3.7z' fill='white'/%3E%3C/svg%3E";
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23625afa'/%3E%3Cpath d='M9 22V10h7.2c2.9 0 4.8 1.7 4.8 4.3 0 1.9-1 3.3-2.7 3.9L22 22h-3.3l-3.2-3.4H12V22H9zm3-5.8h4c1.4 0 2.2-.7 2.2-1.9 0-1.2-.8-1.8-2.2-1.8h-4v3.7z' fill='white'/%3E%3C/svg%3E";
   return `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>RequestHub - ${escapeHtml(customerSlug)}</title>
+  <title>${escapeHtml(customerSlug)} - RequestHub</title>
   <link rel="icon" href="${favicon}" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+  ${DESIGN_FONT_LINK}
   <style>
-    :root {
-      --bg: #0b0b10;
-      --surface: #16151d;
-      --surface-2: #1d1c26;
-      --surface-3: #252430;
-      --border: #2a2935;
-      --text: #f3f2f7;
-      --text-muted: #9492a3;
-      --text-faint: #65636f;
-      --accent: #6d5ef8;
-      --accent-hover: #5b4de3;
-      --accent-tint: rgba(109, 94, 248, 0.16);
-      --good: #22c58b;
-      --good-tint: rgba(34, 197, 139, 0.14);
-      --warn: #e8a53d;
-      --warn-tint: rgba(232, 165, 61, 0.14);
-      --bad: #f06a6a;
-      --bad-tint: rgba(240, 106, 106, 0.14);
-      --info: #4ea8f0;
-      --info-tint: rgba(78, 168, 240, 0.14);
-      --radius: 12px;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; background: var(--bg); color: var(--text);
-      font-family: "Inter", -apple-system, sans-serif; font-size: 14.5px; line-height: 1.5;
-      -webkit-font-smoothing: antialiased;
-    }
-    .icon { width: 14px; height: 14px; display: inline-block; vertical-align: -2px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-
+    ${DESIGN_TOKENS}
     .topbar {
-      background: var(--surface); border-bottom: 1px solid var(--border);
-      padding: 14px 24px; display: flex; align-items: center; gap: 10px;
+      background: var(--card); border-bottom: 1px solid var(--border);
+      padding: 0 24px; display: flex; align-items: center; gap: 4px; height: 56px;
     }
     .logo-mark {
-      width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff;
-      display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0;
+      width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: #fff;
+      display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0;
     }
-    .brand { font-weight: 700; font-size: 15px; }
-    .brand .org { color: var(--text-faint); font-weight: 500; }
-
-    .page { max-width: 1040px; margin: 0 auto; padding: 28px 24px 80px; }
-
-    .hero {
-      background: linear-gradient(135deg, var(--accent-tint), transparent 60%), var(--surface);
-      border: 1px solid var(--border); border-radius: var(--radius); padding: 22px 24px; margin-bottom: 24px;
+    .brand { font-weight: 700; font-size: 14px; margin-right: 14px; }
+    .top-tab {
+      color: var(--text-muted); text-decoration: none; font-size: 13.5px; font-weight: 600; padding: 8px 12px;
+      border-radius: 8px;
     }
-    .hero h1 { font-size: 20px; margin: 0 0 4px; }
-    .hero p { margin: 0; color: var(--text-muted); font-size: 13.5px; }
-    .hero p b { color: var(--text); }
+    .top-tab:hover { color: var(--text); background: var(--surface-2); }
+    .top-tab.active { color: var(--accent); background: var(--accent-tint); }
+    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .nav-search {
+      background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: 8px;
+      padding: 7px 12px; font-size: 13px; font-family: inherit; width: 200px;
+    }
+    .nav-search::placeholder { color: var(--text-faint); }
+    .nav-admin-link { color: var(--text-muted); text-decoration: none; font-size: 13px; font-weight: 600; }
+    .nav-admin-link:hover { color: var(--text); }
 
-    .board-layout { display: grid; grid-template-columns: 1fr 250px; gap: 24px; align-items: start; }
-    .board-layout .sidebar { order: 2; }
-    .board-layout .main { order: 1; }
-    @media (max-width: 760px) { .board-layout { grid-template-columns: 1fr; } .sidebar { order: -1; } }
+    .page { max-width: 980px; margin: 0 auto; padding: 24px 24px 80px; }
+    .board-layout { display: grid; grid-template-columns: 1fr 240px; gap: 24px; align-items: start; }
+    @media (max-width: 760px) { .board-layout { grid-template-columns: 1fr; } .sidebar { order: 2; } }
 
-    .sidebar { display: flex; flex-direction: column; gap: 18px; position: sticky; top: 20px; }
+    .main { min-width: 0; }
+
+    .composer {
+      display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius-card); padding: 12px 16px; margin-bottom: 14px; cursor: pointer;
+    }
+    .composer .icon { color: var(--text-faint); flex-shrink: 0; }
+    .composer-text { flex: 1; color: var(--text-faint); font-size: 13.5px; }
     .btn-add {
-      width: 100%; background: var(--accent); color: #fff; border: none; padding: 11px 14px;
-      border-radius: 9px; font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit;
-      display: flex; align-items: center; justify-content: center; gap: 6px; transition: background .15s;
+      background: var(--accent); color: #fff; border: none; padding: 9px 16px;
+      border-radius: var(--radius-btn); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+      display: flex; align-items: center; gap: 6px; flex-shrink: 0;
     }
     .btn-add:hover { background: var(--accent-hover); }
 
-    .nav-list { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px; }
-    .nav-item {
-      display: flex; align-items: center; gap: 9px; width: 100%; background: none; border: none; cursor: pointer;
-      color: var(--text-muted); font-family: inherit; font-size: 13.5px; font-weight: 500; padding: 9px 10px;
-      border-radius: 8px; text-align: left;
+    .filters-row { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+    .filter-tabs { display: flex; gap: 4px; background: var(--surface-2); border-radius: 9px; padding: 3px; }
+    .filter-tab { background: none; border: none; cursor: pointer; font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--text-muted); padding: 7px 12px; border-radius: 7px; }
+    .filter-tab.active { background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgba(20,16,60,.06); }
+    .filters-row input[type="text"], .filters-row input#search {
+      background: var(--card); border: 1px solid var(--border); color: var(--text);
+      border-radius: 9px; padding: 8px 12px; font-size: 13px; font-family: inherit; flex: 1; min-width: 140px;
     }
-    .nav-item:hover { background: var(--surface-2); color: var(--text); }
-    .nav-item.active { background: var(--accent-tint); color: var(--accent); font-weight: 600; }
-    .nav-item .count { margin-left: auto; font-size: 11.5px; color: var(--text-faint); }
-    .nav-item.active .count { color: var(--accent); }
-
-    .main { min-width: 0; }
-    .filters-row { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
-    .filters-row input, .filters-row select {
-      background: var(--surface); border: 1px solid var(--border); color: var(--text);
-      border-radius: 9px; padding: 9px 12px; font-size: 13px; font-family: inherit;
-    }
-    .filters-row input { flex: 1; min-width: 160px; }
     .filters-row input::placeholder { color: var(--text-faint); }
-    .filters-row select { cursor: pointer; }
 
     .empty { color: var(--text-faint); font-size: 13.5px; text-align: center; padding: 40px 16px; }
 
-    .idea { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 15px 16px; margin-bottom: 8px; }
+    .idea { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 14px 16px; margin-bottom: 8px; }
     .idea-row { display: flex; gap: 14px; align-items: flex-start; }
     .idea-body { flex: 1; min-width: 0; }
-    .idea-title { font-weight: 600; font-size: 14.5px; }
+    .idea-title { font-weight: 600; font-size: 14px; color: var(--text); }
     .idea-desc { color: var(--text-muted); font-size: 13px; margin-top: 3px; line-height: 1.45; }
     .meta { margin-top: 10px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 
     .chip {
-      display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px;
+      display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-pill);
       font-weight: 600; font-size: 11px;
     }
     .chip.cat-Feature { background: var(--accent-tint); color: var(--accent); }
@@ -821,7 +830,7 @@ function boardPage(customerSlug) {
     .chip.cat-Feedback { background: var(--good-tint); color: var(--good); }
 
     .status-chip {
-      font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; text-transform: capitalize;
+      font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-pill); text-transform: capitalize;
     }
     .status-chip.under_review { background-color: var(--surface-3); color: var(--text-muted); }
     .status-chip.planned { background-color: var(--info-tint); color: var(--info); }
@@ -832,12 +841,15 @@ function boardPage(customerSlug) {
     .comment-count { display: inline-flex; align-items: center; gap: 4px; color: var(--text-faint); font-size: 12px; font-weight: 500; background: none; border: none; cursor: pointer; font-family: inherit; padding: 0; }
     .comment-count:hover { color: var(--text); }
 
-    .vote-widget { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 1px; width: 36px; }
-    .vote-arrow { background: none; border: none; cursor: pointer; color: var(--text-faint); padding: 2px; display: flex; }
+    .vote-widget {
+      flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
+      width: 38px; border: 1px solid var(--border); border-radius: 9px; padding: 5px 0;
+    }
+    .vote-arrow { background: none; border: none; cursor: pointer; color: var(--text-faint); padding: 1px; display: flex; }
     .vote-arrow:hover:not(:disabled) { color: var(--accent); }
     .vote-arrow:disabled { opacity: .25; cursor: default; }
     .vote-arrow.on { color: var(--accent); }
-    .vote-count { font-size: 15px; font-weight: 700; font-family: "IBM Plex Mono", monospace; }
+    .vote-count { font-size: 13px; font-weight: 700; color: var(--text); }
 
     .comments { display: none; margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
     .comments.open { display: block; }
@@ -865,11 +877,11 @@ function boardPage(customerSlug) {
     .comment-form button:hover { background: var(--accent-hover); }
 
     .form-card {
-      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-      padding: 18px 20px; margin-bottom: 20px; display: none;
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card);
+      padding: 18px 20px; margin-bottom: 14px; display: none;
     }
     .form-card.open { display: block; }
-    .form-card h3 { margin: 0 0 12px; font-size: 14px; }
+    .form-card h3 { margin: 0 0 12px; font-size: 14px; color: var(--text); }
     .field { margin-bottom: 12px; }
     .field label { display: block; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--text-faint); margin-bottom: 5px; }
     .field input, .field textarea, .field select {
@@ -879,7 +891,7 @@ function boardPage(customerSlug) {
     .field textarea { resize: vertical; min-height: 60px; }
     .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .btn-submit {
-      background: var(--accent); color: #fff; border: none; padding: 10px 18px; border-radius: 8px;
+      background: var(--accent); color: #fff; border: none; padding: 10px 18px; border-radius: var(--radius-btn);
       font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit; margin-top: 4px;
     }
     .btn-submit:hover { background: var(--accent-hover); }
@@ -888,48 +900,53 @@ function boardPage(customerSlug) {
       cursor: pointer; font-family: inherit;
     }
 
+    .sidebar { display: flex; flex-direction: column; gap: 18px; }
+    .sidebar-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); padding: 0 10px; margin-bottom: 4px; }
+    .nav-list { display: flex; flex-direction: column; gap: 1px; }
+    .nav-item {
+      display: flex; align-items: center; gap: 9px; width: 100%; background: none; border: none; cursor: pointer;
+      color: var(--text-muted); font-family: inherit; font-size: 13.5px; font-weight: 500; padding: 8px 10px;
+      border-radius: 8px; text-align: left;
+    }
+    .nav-item:hover { background: var(--surface-2); color: var(--text); }
+    .nav-item.active { background: var(--accent-tint); color: var(--accent); font-weight: 600; }
+    .nav-item .count { margin-left: auto; font-size: 11.5px; color: var(--text-faint); }
+    .nav-item.active .count { color: var(--accent); }
+    .cat-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); flex-shrink: 0; }
+    .cat-dot.Feature { background: var(--accent); }
+    .cat-dot.Bug { background: var(--bad); }
+    .cat-dot.Feedback { background: var(--good); }
+
+    .sidebar-link {
+      display: flex; align-items: center; gap: 9px; padding: 8px 10px; color: var(--text-muted);
+      text-decoration: none; font-size: 13.5px; font-weight: 500; border-radius: 8px;
+    }
+    .sidebar-link:hover { background: var(--surface-2); color: var(--text); }
+    .sidebar-link.cta { color: var(--accent); font-weight: 600; }
+
     .footer-note { text-align: center; color: var(--text-faint); font-size: 11.5px; margin-top: 32px; }
   </style>
 </head>
 <body>
   <div class="topbar">
     <div class="logo-mark">R</div>
-    <div class="brand">RequestHub <span class="org">/ ${escapeHtml(customerSlug)}</span></div>
+    <div class="brand">${escapeHtml(customerSlug)}</div>
+    <a class="top-tab active" href="/b/${encodeURIComponent(customerSlug)}">Feedback</a>
+    <a class="top-tab" href="/b/${encodeURIComponent(customerSlug)}/roadmap">Roadmap</a>
+    <div class="nav-right">
+      <a class="nav-admin-link" href="/b/${encodeURIComponent(customerSlug)}/admin">Admin</a>
+    </div>
   </div>
 
   <div class="page">
-    <div class="hero">
-      <h1>Welcome to <b>${escapeHtml(customerSlug)}</b>'s feedback board</h1>
-      <p>Submit an idea, vote on what matters, and follow along as we ship it.</p>
-    </div>
-
     <div class="board-layout">
-      <div class="sidebar">
-        <button class="btn-add" id="openFormBtn">+ Add feedback</button>
-        <div class="nav-list" id="categoryNav"></div>
-        <a class="nav-list" style="display:flex;align-items:center;gap:9px;padding:9px 10px;color:var(--text-muted);text-decoration:none;font-size:13.5px;font-weight:500;" href="/b/${encodeURIComponent(customerSlug)}/roadmap">
-          <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/></svg>
-          Roadmap
-        </a>
-        <a class="nav-list" style="display:flex;align-items:center;gap:9px;padding:9px 10px;color:var(--text-muted);text-decoration:none;font-size:13.5px;font-weight:500;" href="/b/${encodeURIComponent(customerSlug)}/admin">
-          <svg class="icon" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-          Triage dashboard
-        </a>
-        <a class="nav-list" style="display:flex;align-items:center;gap:9px;padding:9px 10px;color:var(--text-muted);text-decoration:none;font-size:13.5px;font-weight:500;" href="/b/${encodeURIComponent(customerSlug)}/connect">
-          <svg class="icon" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.5-1.5"/></svg>
-          Connect your tools
-        </a>
-        ${
-          customerSlug === "demo"
-            ? `<a class="nav-list" style="display:flex;align-items:center;gap:9px;padding:9px 10px;color:var(--accent);text-decoration:none;font-size:13.5px;font-weight:600;" href="/signup">
-          <svg class="icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Start your own board
-        </a>`
-            : ""
-        }
-      </div>
-
       <div class="main">
+        <div class="composer" id="openFormBtn">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          <span class="composer-text">Share an idea or report a problem...</span>
+          <button type="button" class="btn-add"><svg class="icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Feedback</button>
+        </div>
+
         <div class="form-card" id="formCard">
           <h3>Share your feedback</h3>
           <form id="submit-form">
@@ -961,18 +978,49 @@ function boardPage(customerSlug) {
         </div>
 
         <div class="filters-row">
+          <div class="filter-tabs">
+            <button class="filter-tab active" data-sort="votes">Most voted</button>
+            <button class="filter-tab" data-sort="new">Newest</button>
+          </div>
           <input id="search" placeholder="Search feedback..." />
-          <select id="sort">
-            <option value="votes">Most voted</option>
-            <option value="new">Newest</option>
-          </select>
         </div>
 
         <div id="list"><div class="empty">Loading...</div></div>
       </div>
-    </div>
 
-    <div class="footer-note">Powered by RequestHub, built on Fastn</div>
+      <div class="sidebar">
+        <div>
+          <div class="sidebar-label">Categories</div>
+          <div class="nav-list" id="categoryNav"></div>
+        </div>
+        <div>
+          <div class="sidebar-label">Tools</div>
+          <div class="nav-list">
+            <a class="sidebar-link" href="/b/${encodeURIComponent(customerSlug)}/roadmap">
+              <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/></svg>
+              Roadmap
+            </a>
+            <a class="sidebar-link" href="/b/${encodeURIComponent(customerSlug)}/admin">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              Triage dashboard
+            </a>
+            <a class="sidebar-link" href="/b/${encodeURIComponent(customerSlug)}/connect">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.5-1.5"/></svg>
+              Connect your tools
+            </a>
+            ${
+              customerSlug === "demo"
+                ? `<a class="sidebar-link cta" href="/signup">
+              <svg class="icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Start your own board
+            </a>`
+                : ""
+            }
+          </div>
+        </div>
+        <div class="footer-note">Powered by RequestHub<br/>built on Fastn</div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -981,6 +1029,7 @@ function boardPage(customerSlug) {
     const categories = ["Feature", "Bug", "Feedback"];
     let allIdeas = [];
     let activeCategory = "all";
+    let activeSort = "votes";
 
     const ICONS = {
       chevronUp: '<svg class="icon" viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15"/></svg>',
@@ -996,7 +1045,7 @@ function boardPage(customerSlug) {
       renderNav();
       const list = document.getElementById('list');
       const q = (document.getElementById('search').value || '').toLowerCase();
-      const sort = document.getElementById('sort').value;
+      const sort = activeSort;
 
       let ideas = allIdeas.filter(function (i) {
         if (activeCategory !== 'all' && i.category !== activeCategory) return false;
@@ -1018,6 +1067,11 @@ function boardPage(customerSlug) {
         const hasVoted = voted.indexOf(i.id) !== -1;
         return '<div class="idea">' +
           '<div class="idea-row">' +
+          '<div class="vote-widget">' +
+          '<button class="vote-arrow up' + (hasVoted ? ' on' : '') + '" data-idea-id="' + i.id + '"' + (hasVoted ? ' disabled' : '') + ' title="Vote">' + ICONS.chevronUp + '</button>' +
+          '<span class="vote-count">' + i.votes + '</span>' +
+          '<button class="vote-arrow down' + (hasVoted ? '' : ' disabled') + '" data-idea-id="' + i.id + '"' + (hasVoted ? '' : ' disabled') + ' title="Remove vote">' + ICONS.chevronDown + '</button>' +
+          '</div>' +
           '<div class="idea-body">' +
           '<div class="idea-title">' + escapeHtml(i.title) + '</div>' +
           (i.description ? '<div class="idea-desc">' + escapeHtml(i.description) + '</div>' : '') +
@@ -1037,11 +1091,6 @@ function boardPage(customerSlug) {
           '<button type="submit">Post</button>' +
           '</form>' +
           '</div>' +
-          '</div>' +
-          '<div class="vote-widget">' +
-          '<button class="vote-arrow up' + (hasVoted ? ' on' : '') + '" data-idea-id="' + i.id + '"' + (hasVoted ? ' disabled' : '') + ' title="Vote">' + ICONS.chevronUp + '</button>' +
-          '<span class="vote-count">' + i.votes + '</span>' +
-          '<button class="vote-arrow down' + (hasVoted ? '' : ' disabled') + '" data-idea-id="' + i.id + '"' + (hasVoted ? '' : ' disabled') + ' title="Remove vote">' + ICONS.chevronDown + '</button>' +
           '</div>' +
           '</div>' +
           '</div>';
@@ -1174,7 +1223,15 @@ function boardPage(customerSlug) {
     }
 
     document.getElementById('search').addEventListener('input', render);
-    document.getElementById('sort').addEventListener('change', render);
+
+    document.querySelectorAll('.filter-tab').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        document.querySelectorAll('.filter-tab').forEach(function (b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        activeSort = btn.getAttribute('data-sort');
+        render();
+      });
+    });
 
     document.getElementById('openFormBtn').addEventListener('click', function () {
       document.getElementById('formCard').classList.add('open');
@@ -1316,69 +1373,70 @@ function roadmapPage(customerSlug) {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Roadmap - RequestHub</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+  <title>Roadmap - ${escapeHtml(customerSlug)} - RequestHub</title>
+  ${DESIGN_FONT_LINK}
   <style>
-    :root {
-      --bg: #0b0b10; --surface: #16151d; --surface-2: #1d1c26; --surface-3: #252430;
-      --border: #2a2935; --text: #f3f2f7; --text-muted: #9492a3; --text-faint: #65636f;
-      --accent: #6d5ef8; --accent-tint: rgba(109, 94, 248, 0.16);
-      --good: #22c58b; --good-tint: rgba(34, 197, 139, 0.14);
-      --warn: #e8a53d; --warn-tint: rgba(232, 165, 61, 0.14);
-      --bad: #f06a6a; --bad-tint: rgba(240, 106, 106, 0.14);
-      --info: #4ea8f0; --info-tint: rgba(78, 168, 240, 0.14);
-      --radius: 12px;
+    ${DESIGN_TOKENS}
+    .topbar {
+      background: var(--card); border-bottom: 1px solid var(--border);
+      padding: 0 24px; display: flex; align-items: center; gap: 4px; height: 56px;
     }
-    * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--text); font-family: "Inter", -apple-system, sans-serif; font-size: 14px; line-height: 1.5; }
-    .topbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
-    .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
-    .brand { font-weight: 700; font-size: 15px; }
-    .brand .org { color: var(--text-faint); font-weight: 500; }
-    .back { margin-left: auto; color: var(--text-muted); font-size: 13px; text-decoration: none; }
-    .back:hover { color: var(--text); }
+    .logo-mark { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+    .brand { font-weight: 700; font-size: 14px; margin-right: 14px; }
+    .top-tab { color: var(--text-muted); text-decoration: none; font-size: 13.5px; font-weight: 600; padding: 8px 12px; border-radius: 8px; }
+    .top-tab:hover { color: var(--text); background: var(--surface-2); }
+    .top-tab.active { color: var(--accent); background: var(--accent-tint); }
+    .nav-right { margin-left: auto; }
+    .nav-admin-link { color: var(--text-muted); text-decoration: none; font-size: 13px; font-weight: 600; }
+    .nav-admin-link:hover { color: var(--text); }
 
-    .page { max-width: 1200px; margin: 0 auto; padding: 24px; }
-    .hero { margin-bottom: 20px; }
-    .hero h1 { font-size: 20px; margin: 0 0 4px; }
-    .hero p { margin: 0; color: var(--text-muted); font-size: 13.5px; }
+    .page { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    .page-title { font-size: 20px; font-weight: 700; margin: 0 0 18px; }
 
     .board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; align-items: start; }
     @media (max-width: 900px) { .board { grid-template-columns: 1fr; } }
 
-    .column-header { display: flex; align-items: center; gap: 8px; padding: 0 2px 10px; }
+    .column { background: var(--surface-2); border-radius: var(--radius-card); padding: 14px; }
+    .column-header { display: flex; align-items: center; gap: 8px; padding: 0 2px 12px; }
     .column-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
     .column-dot.under_review { background: var(--text-faint); }
     .column-dot.planned { background: var(--info); }
     .column-dot.in_progress { background: var(--warn); }
     .column-dot.shipped { background: var(--good); }
-    .column-title { font-weight: 600; font-size: 13.5px; }
-    .column-count { margin-left: auto; color: var(--text-faint); font-size: 12px; font-family: "IBM Plex Mono", monospace; }
+    .column-title { font-weight: 700; font-size: 13.5px; color: var(--text); }
+    .column-count { margin-left: auto; background: var(--card); color: var(--text-faint); font-size: 11.5px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
 
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 13px 14px; margin-bottom: 8px; }
-    .card-title { font-weight: 600; font-size: 13.5px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 13px 14px; margin-bottom: 8px; display: flex; gap: 10px; align-items: flex-start; }
+    .card-body { flex: 1; min-width: 0; }
+    .card-title { font-weight: 600; font-size: 13.5px; color: var(--text); }
     .card-desc { color: var(--text-muted); font-size: 12px; margin-top: 4px; line-height: 1.4; }
-    .card-meta { margin-top: 10px; display: flex; align-items: center; gap: 6px; }
-    .chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-weight: 600; font-size: 10.5px; }
+    .card-meta { margin-top: 10px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-pill); font-weight: 600; font-size: 10.5px; }
     .chip.cat-Feature { background: var(--accent-tint); color: var(--accent); }
     .chip.cat-Bug { background: var(--bad-tint); color: var(--bad); }
     .chip.cat-Feedback { background: var(--good-tint); color: var(--good); }
-    .card-votes { margin-left: auto; color: var(--text-faint); font-size: 11.5px; font-family: "IBM Plex Mono", monospace; }
+    .vote-box {
+      flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      width: 32px; border: 1px solid var(--border); border-radius: 8px; padding: 4px 0; color: var(--text-faint);
+    }
+    .vote-box .icon { width: 12px; height: 12px; }
+    .vote-box .vote-num { font-size: 12px; font-weight: 700; color: var(--text); }
     .empty-col { color: var(--text-faint); font-size: 12px; padding: 10px 2px; }
   </style>
 </head>
 <body>
   <div class="topbar">
     <div class="logo-mark">R</div>
-    <div class="brand">RequestHub <span class="org">/ ${escapeHtml(customerSlug)} roadmap</span></div>
-    <a class="back" href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+    <div class="brand">${escapeHtml(customerSlug)}</div>
+    <a class="top-tab" href="/b/${encodeURIComponent(customerSlug)}">Feedback</a>
+    <a class="top-tab active" href="/b/${encodeURIComponent(customerSlug)}/roadmap">Roadmap</a>
+    <div class="nav-right">
+      <a class="nav-admin-link" href="/b/${encodeURIComponent(customerSlug)}/admin">Admin</a>
+    </div>
   </div>
 
   <div class="page">
-    <div class="hero">
-      <h1>Roadmap</h1>
-      <p>What's being considered, what's next, and what's already shipped.</p>
-    </div>
+    <h1 class="page-title">Roadmap</h1>
     <div class="board" id="board"></div>
   </div>
 
@@ -1405,12 +1463,14 @@ function roadmapPage(customerSlug) {
         var cards = items.length
           ? items.map(function (i) {
               return '<div class="card">' +
+                '<div class="card-body">' +
                 '<div class="card-title">' + escapeHtml(i.title) + '</div>' +
                 (i.description ? '<div class="card-desc">' + escapeHtml(i.description) + '</div>' : '') +
                 '<div class="card-meta">' +
                 '<span class="chip cat-' + i.category + '">' + i.category + '</span>' +
-                '<span class="card-votes">' + i.votes + ' votes</span>' +
                 '</div>' +
+                '</div>' +
+                '<div class="vote-box"><svg class="icon" viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15"/></svg><span class="vote-num">' + i.votes + '</span></div>' +
                 '</div>';
             }).join('')
           : '<div class="empty-col">Nothing here yet.</div>';
