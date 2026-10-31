@@ -795,7 +795,7 @@ function boardPage(customerSlug) {
 
     load();
   </script>
-  ${customerSlug === "acme-saas" ? `<script src="/embed.js" data-customer="${escapeHtml(customerSlug)}"></script>` : ""}
+  ${["acme-saas", "demo"].includes(customerSlug) ? `<script src="/embed.js" data-customer="${escapeHtml(customerSlug)}"></script>` : ""}
 </body>
 </html>`;
 }
