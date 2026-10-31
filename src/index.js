@@ -1693,6 +1693,7 @@ function boardPage(customerSlug, isOwner) {
           '<span class="chip status-chip ' + i.status + '">' + (statusLabels[i.status] || i.status.replace('_', ' ')) + '</span>' +
           '<span class="meta-right">' +
           '<button class="comment-count" data-idea-id="' + i.id + '">' + ICONS.comment + '<span class="cc-num">Comments</span></button>' +
+          '<a class="comment-count" href="/b/' + encodeURIComponent(customerSlug) + '/ideas/' + i.id + '" title="Shareable link to this idea">&#128279;</a>' +
           '</span>' +
           '</div>' +
           '<div class="comments" id="comments-' + i.id + '">' +
@@ -1883,6 +1884,228 @@ function boardPage(customerSlug, isOwner) {
     load();
   </script>
   ${["acme-saas", "demo"].includes(customerSlug) ? `<script src="/embed.js" data-customer="${escapeHtml(customerSlug)}"></script>` : ""}
+</body>
+</html>`;
+}
+
+function ideaDetailPage(customerSlug, ideaId, isOwner) {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Idea - ${escapeHtml(customerSlug)} - RequestHub</title>
+  ${DESIGN_FONT_LINK}
+  <style>
+    ${DESIGN_TOKENS}
+    .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; align-items: center; gap: 4px; height: 56px; }
+    .logo-mark { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+    .brand { font-weight: 700; font-size: 14px; margin-right: 14px; }
+    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+    .nav-right a, .nav-right button { color: var(--text-muted); text-decoration: none; font-size: 13px; font-weight: 600; background: none; border: none; cursor: pointer; font-family: inherit; }
+    .nav-right a:hover, .nav-right button:hover { color: var(--text); }
+
+    .page { max-width: 720px; margin: 0 auto; padding: 32px 24px; }
+    .not-found { text-align: center; color: var(--text-faint); padding: 60px 16px; }
+
+    .idea-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 24px; }
+    .idea-top { display: flex; gap: 16px; align-items: flex-start; }
+    .vote-box {
+      flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      width: 48px; border: 1px solid var(--border); border-radius: 10px; padding: 8px 0; color: var(--text-faint); cursor: pointer; background: none; font-family: inherit;
+    }
+    .vote-box:hover { border-color: var(--accent); }
+    .vote-box.voted { border-color: var(--accent); background: var(--accent-tint); color: var(--accent); }
+    .vote-box .icon { width: 16px; height: 16px; }
+    .vote-box .vote-num { font-size: 16px; font-weight: 700; color: var(--text); margin-top: 2px; }
+    .idea-title { font-size: 20px; font-weight: 700; margin: 0 0 8px; }
+    .idea-desc { color: var(--text-muted); font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+    .idea-meta { margin-top: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: var(--radius-pill); font-weight: 600; font-size: 11px; }
+    .chip.cat-Feature { background: var(--accent-tint); color: var(--accent); }
+    .chip.cat-Bug { background: var(--bad-tint); color: var(--bad); }
+    .chip.cat-Feedback { background: var(--good-tint); color: var(--good); }
+    .chip.status-chip.under_review { background-color: var(--surface-3); color: var(--text-muted); }
+    .chip.status-chip.planned { background-color: var(--info-tint); color: var(--info); }
+    .chip.status-chip.in_progress { background-color: var(--warn-tint); color: var(--warn); }
+    .chip.status-chip.shipped { background-color: var(--good-tint); color: var(--good); }
+    .chip.status-chip.declined { background-color: var(--bad-tint); color: var(--bad); }
+    .chip.badge { background: var(--surface-3); color: var(--text-muted); text-decoration: none; }
+
+    .comments-section { margin-top: 24px; }
+    .comments-title { font-size: 14px; font-weight: 700; margin-bottom: 12px; }
+    .comment { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .comment:last-child { border-bottom: none; }
+    .comment-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--accent-tint); color: var(--accent); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; flex-shrink: 0; }
+    .comment-body-text { font-size: 13px; color: var(--text); line-height: 1.5; }
+    .comment-author { font-weight: 700; margin-right: 6px; }
+    .comment-form { display: flex; gap: 8px; margin-top: 14px; }
+    .comment-form input { flex: 1; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 9px 12px; font-size: 13px; font-family: inherit; }
+    .comment-form button { background: var(--accent); color: #fff; border: none; padding: 9px 16px; border-radius: var(--radius-btn); font-weight: 600; font-size: 13px; cursor: pointer; font-family: inherit; }
+    .empty { color: var(--text-faint); font-size: 13px; padding: 8px 0; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo-mark">R</div>
+    <div class="brand">${escapeHtml(customerSlug)}</div>
+    <div class="nav-right">
+      ${isOwner ? `<a href="/owner">&larr; Owner console</a>` : ""}
+      <a href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+      <button type="button" id="copyLinkBtn">Copy link</button>
+    </div>
+  </div>
+  <div class="page" id="page">
+    <div class="not-found">Loading...</div>
+  </div>
+  <script>
+    var customerSlug = ${JSON.stringify(customerSlug)};
+    var ideaId = ${JSON.stringify(String(ideaId))};
+    var statusLabels = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped", declined: "Declined" };
+
+    function escapeHtml(s) {
+      var d = document.createElement('div');
+      d.innerText = s || '';
+      return d.innerHTML;
+    }
+
+    function getVotedIds() {
+      try { return JSON.parse(localStorage.getItem('requesthub_voted_' + customerSlug) || '[]'); }
+      catch (e) { return []; }
+    }
+    function addVotedId(id) {
+      try {
+        var ids = getVotedIds();
+        if (ids.indexOf(id) === -1) ids.push(id);
+        localStorage.setItem('requesthub_voted_' + customerSlug, JSON.stringify(ids));
+      } catch (e) {}
+    }
+    function removeVotedId(id) {
+      try {
+        var ids = getVotedIds().filter(function (v) { return v !== id; });
+        localStorage.setItem('requesthub_voted_' + customerSlug, JSON.stringify(ids));
+      } catch (e) {}
+    }
+
+    document.getElementById('copyLinkBtn').addEventListener('click', function () {
+      var btn = this;
+      navigator.clipboard.writeText(window.location.href).then(function () {
+        btn.textContent = 'Copied!';
+        setTimeout(function () { btn.textContent = 'Copy link'; }, 1500);
+      });
+    });
+
+    function renderIdea(idea) {
+      var page = document.getElementById('page');
+      var voted = getVotedIds().indexOf(idea.id) !== -1;
+      var badges = [];
+      if (idea.submitter_email) badges.push('<span class="chip badge">' + escapeHtml(idea.submitter_email) + '</span>');
+      if (idea.linear_issue_url) badges.push('<a class="chip badge" href="' + idea.linear_issue_url + '" target="_blank" rel="noopener">Linear ticket &#8599;</a>');
+      if (idea.notion_archived_at) badges.push('<span class="chip badge">Archived to Notion</span>');
+      var date = idea.created_at ? new Date(idea.created_at).toLocaleDateString() : '';
+
+      page.innerHTML =
+        '<div class="idea-card">' +
+        '<div class="idea-top">' +
+        '<button type="button" class="vote-box' + (voted ? ' voted' : '') + '" id="voteBtn">' +
+        '<svg class="icon" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none"><polyline points="18 15 12 9 6 15"/></svg>' +
+        '<span class="vote-num">' + idea.votes + '</span>' +
+        '</button>' +
+        '<div style="flex:1;min-width:0;">' +
+        '<div class="idea-title">' + escapeHtml(idea.title) + '</div>' +
+        (idea.description ? '<div class="idea-desc">' + escapeHtml(idea.description) + '</div>' : '') +
+        '<div class="idea-meta">' +
+        '<span class="chip cat-' + idea.category + '">' + idea.category + '</span>' +
+        '<span class="chip status-chip ' + idea.status + '">' + (statusLabels[idea.status] || idea.status) + '</span>' +
+        badges.join('') +
+        '<span style="color:var(--text-faint);font-size:11px;margin-left:auto;">' + date + '</span>' +
+        '</div>' +
+        '</div>' +
+        '</div>' +
+        '<div class="comments-section">' +
+        '<div class="comments-title">Comments</div>' +
+        '<div class="comments-list" id="commentsList"><div class="empty">Loading...</div></div>' +
+        '<div class="comment-form">' +
+        '<input id="commentName" placeholder="Your name" style="max-width:140px;" />' +
+        '<input id="commentBody" placeholder="Add a comment..." />' +
+        '<button type="button" id="commentBtn">Post</button>' +
+        '</div>' +
+        '</div>' +
+        '</div>';
+
+      document.getElementById('voteBtn').addEventListener('click', function () {
+        var nowVoted = getVotedIds().indexOf(idea.id) !== -1;
+        var direction = nowVoted ? 'down' : 'up';
+        fetch('/api/ideas/' + idea.id + '/vote', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ direction: direction }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d.ok) {
+              if (direction === 'up') addVotedId(idea.id); else removeVotedId(idea.id);
+              load();
+            }
+          });
+      });
+
+      document.getElementById('commentBtn').addEventListener('click', function () {
+        var name = document.getElementById('commentName').value.trim() || 'Anonymous';
+        var bodyInput = document.getElementById('commentBody');
+        var body = bodyInput.value.trim();
+        if (!body) return;
+        fetch('/api/ideas/' + idea.id + '/comments', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ authorName: name, body: body }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function () {
+            bodyInput.value = '';
+            loadComments(idea.id);
+          });
+      });
+
+      loadComments(idea.id);
+    }
+
+    function loadComments(id) {
+      var listEl = document.getElementById('commentsList');
+      fetch('/api/ideas/' + id + '/comments')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var comments = d.comments || [];
+          if (!comments.length) {
+            listEl.innerHTML = '<div class="empty">No comments yet.</div>';
+            return;
+          }
+          listEl.innerHTML = comments.map(function (c) {
+            var initial = (c.author_name || '?').trim().charAt(0).toUpperCase() || '?';
+            return '<div class="comment">' +
+              '<div class="comment-avatar">' + escapeHtml(initial) + '</div>' +
+              '<div class="comment-body-text"><span class="comment-author">' + escapeHtml(c.author_name) + '</span>' + escapeHtml(c.body) + '</div>' +
+              '</div>';
+          }).join('');
+        });
+    }
+
+    function load() {
+      fetch('/api/ideas?customer=' + encodeURIComponent(customerSlug))
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.statusLabels) statusLabels = d.statusLabels;
+          var idea = (d.ideas || []).find(function (i) { return String(i.id) === ideaId; });
+          if (!idea) {
+            document.getElementById('page').innerHTML = '<div class="not-found">This idea doesn\\'t exist or was removed.</div>';
+            return;
+          }
+          renderIdea(idea);
+        });
+    }
+
+    load();
+  </script>
 </body>
 </html>`;
 }
@@ -2910,6 +3133,12 @@ export default {
     if (request.method === "GET" && boardMatch) {
       const isOwner = await requireAuth(request, env, OWNER_SLUG);
       return html(boardPage(boardMatch[1], isOwner));
+    }
+
+    const ideaDetailMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/ideas\/(\d+)\/?$/);
+    if (request.method === "GET" && ideaDetailMatch) {
+      const isOwner = await requireAuth(request, env, OWNER_SLUG);
+      return html(ideaDetailPage(ideaDetailMatch[1], ideaDetailMatch[2], isOwner));
     }
 
     const loginMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/login\/?$/);
