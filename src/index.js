@@ -23,6 +23,11 @@ const REGISTER_LINEAR_WEBHOOK_WORKFLOW_ID = "wf_55825cf21bfc";
 const UNREGISTER_LINEAR_WEBHOOK_WORKFLOW_ID = "wf_9633b10b01af";
 const FIND_IDEA_BY_LINEAR_ISSUE_WORKFLOW_ID = "wf_bc7a52df867b";
 const GET_LINEAR_WEBHOOK_SECRET_WORKFLOW_ID = "wf_c376837b8860";
+const CREATE_WEBHOOK_WORKFLOW_ID = "wf_e13c16fac3dc";
+const LIST_WEBHOOKS_WORKFLOW_ID = "wf_655ab12c26b8";
+const DELETE_WEBHOOK_WORKFLOW_ID = "wf_c485e6e5025a";
+const LIST_WEBHOOKS_FOR_DELIVERY_WORKFLOW_ID = "wf_17330509843e";
+const RECORD_WEBHOOK_DELIVERY_WORKFLOW_ID = "wf_f4502de11768";
 const OWNER_SLUG = "__owner__";
 
 // Bidirectional: a Linear state change updates the matching idea's status in
@@ -152,6 +157,59 @@ async function callWorkflow(env, workflowId, input, endOrgId) {
     throw new Error(body?.error || `Fastn call failed: ${res.status}`);
   }
   return body?.data ?? body;
+}
+
+async function signWebhookPayload(secret, rawBody) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  return toHex(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody)));
+}
+
+// Fire-and-forget outbound delivery to every webhook a tenant has registered
+// for this event type - no retry/queue (a demo-scale feature, not a durable
+// delivery system). Runs via ctx.waitUntil so it completes after the response
+// is already sent back to the caller, without the caller waiting on it.
+function deliverWebhooks(env, ctx, customerSlug, eventType, payload) {
+  const task = (async () => {
+    let webhooks = [];
+    try {
+      const data = await callWorkflow(env, LIST_WEBHOOKS_FOR_DELIVERY_WORKFLOW_ID, { customerSlug });
+      webhooks = (data?.webhooks || []).filter((w) => (w.events || "").split(",").includes(eventType));
+    } catch {
+      return;
+    }
+    const body = JSON.stringify({ event: eventType, customerSlug, data: payload, sentAt: new Date().toISOString() });
+    await Promise.all(
+      webhooks.map(async (w) => {
+        let deliveryStatus = "error";
+        try {
+          const signature = await signWebhookPayload(w.secret, body);
+          const res = await fetch(w.url, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-requesthub-signature": signature,
+              "x-requesthub-event": eventType,
+            },
+            body,
+          });
+          deliveryStatus = res.ok ? "delivered (" + res.status + ")" : "failed (" + res.status + ")";
+        } catch {
+          // Single attempt, no retry - a dead customer endpoint shouldn't
+          // affect anything else in the request that triggered this event.
+        }
+        try {
+          await callWorkflow(env, RECORD_WEBHOOK_DELIVERY_WORKFLOW_ID, { id: w.id, status: deliveryStatus });
+        } catch {}
+      })
+    );
+  })();
+  if (ctx && ctx.waitUntil) ctx.waitUntil(task);
 }
 
 function escapeHtml(s) {
@@ -958,6 +1016,17 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
       </div>
       <p class="hint" id="inviteNote" style="margin-top: 8px;"></p>
     </div>
+
+    <div class="card">
+      <h2>Webhooks</h2>
+      <p class="hint">Notify your own systems when an idea is submitted or its status changes. Each delivery is a signed POST - verify it with HMAC-SHA256 over the raw body using the secret shown when you create it (shown once, not stored anywhere you can retrieve again).</p>
+      <div id="webhookList"></div>
+      <div class="team-invite-row">
+        <input type="url" id="webhookUrl" placeholder="https://your-system.example.com/webhooks/requesthub" />
+        <button type="button" class="btn-copy" id="addWebhookBtn">Add</button>
+      </div>
+      <p class="hint" id="webhookNote" style="margin-top: 8px;"></p>
+    </div>
   </div>
   <script>
     var customerSlug = ${JSON.stringify(customerSlug)};
@@ -1157,6 +1226,59 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
             loadTeam();
           } else {
             note.textContent = d.error || 'Could not add that teammate.';
+            note.style.color = 'var(--bad)';
+          }
+        });
+    });
+
+    function loadWebhooks() {
+      fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/webhooks')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var webhooks = (d && d.ok && d.webhooks) || [];
+          var list = document.getElementById('webhookList');
+          if (!webhooks.length) {
+            list.innerHTML = '<p class="team-empty">No webhooks configured yet.</p>';
+            return;
+          }
+          list.innerHTML = webhooks.map(function (w) {
+            var url = w.url.replace(/</g, '&lt;');
+            var status = w.last_delivery_status
+              ? ' - last delivery: ' + w.last_delivery_status
+              : ' - no deliveries yet';
+            return '<div class="team-row"><span>' + url + '<br/><span style="color:var(--text-faint);font-size:11px;">' + w.events.replace(/,/g, ', ') + status + '</span></span>' +
+              '<button type="button" class="btn-remove" data-id="' + w.id + '">Remove</button></div>';
+          }).join('');
+          list.querySelectorAll('.btn-remove').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/webhooks/' + btn.getAttribute('data-id'), {
+                method: 'DELETE',
+              }).then(loadWebhooks);
+            });
+          });
+        });
+    }
+    loadWebhooks();
+
+    document.getElementById('addWebhookBtn').addEventListener('click', function () {
+      var input = document.getElementById('webhookUrl');
+      var note = document.getElementById('webhookNote');
+      var url = input.value.trim();
+      if (!url) return;
+      fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/webhooks', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url: url }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.ok) {
+            input.value = '';
+            note.innerHTML = 'Added. <strong>Signing secret (shown once, copy it now):</strong><br/><code style="font-size:11px;word-break:break-all;">' + d.webhook.secret + '</code>';
+            note.style.color = 'var(--good)';
+            loadWebhooks();
+          } else {
+            note.textContent = d.error || 'Could not add that webhook.';
             note.style.color = 'var(--bad)';
           }
         });
@@ -2634,7 +2756,7 @@ function ownerDashboardPage(customers, errorMsg) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     if (request.method === "GET" && (url.pathname === "/" || url.pathname === "")) {
@@ -3158,6 +3280,62 @@ export default {
       return json({ ok: false, error: "action must be 'enable' or 'disable'" }, 400);
     }
 
+    const webhooksMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/webhooks$/);
+    if (request.method === "GET" && webhooksMatch) {
+      const customerSlug = webhooksMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      try {
+        const data = await callWorkflow(env, LIST_WEBHOOKS_WORKFLOW_ID, { customerSlug });
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+    if (request.method === "POST" && webhooksMatch) {
+      const customerSlug = webhooksMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ ok: false, error: "invalid JSON body" }, 400);
+      }
+      const webhookUrl = (body.url || "").trim();
+      if (!webhookUrl) {
+        return json({ ok: false, error: "url is required" }, 400);
+      }
+      const secret = toHex(crypto.getRandomValues(new Uint8Array(32)));
+      try {
+        const data = await callWorkflow(env, CREATE_WEBHOOK_WORKFLOW_ID, {
+          customerSlug,
+          url: webhookUrl,
+          events: Array.isArray(body.events) ? body.events : undefined,
+          secret,
+        });
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
+    const webhookDeleteMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/webhooks\/(\d+)$/);
+    if (request.method === "DELETE" && webhookDeleteMatch) {
+      const customerSlug = webhookDeleteMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      try {
+        const data = await callWorkflow(env, DELETE_WEBHOOK_WORKFLOW_ID, { customerSlug, id: Number(webhookDeleteMatch[2]) });
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
     const linearWebhookMatch = url.pathname.match(/^\/api\/webhooks\/linear\/([a-z0-9-]+)$/);
     if (request.method === "POST" && linearWebhookMatch) {
       const customerSlug = linearWebhookMatch[1];
@@ -3236,6 +3414,9 @@ export default {
           },
           endOrgId
         );
+        if (data?.idea) {
+          deliverWebhooks(env, ctx, customerSlug, "idea.status_changed", data.idea);
+        }
         return json({ ok: true, data });
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
@@ -3294,6 +3475,9 @@ export default {
           },
           endOrgId
         );
+        if (data?.idea) {
+          deliverWebhooks(env, ctx, submitCustomerSlug, "idea.created", data.idea);
+        }
         return json(data);
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
@@ -3393,6 +3577,9 @@ export default {
           },
           endOrgId
         );
+        if (data?.idea) {
+          deliverWebhooks(env, ctx, statusCustomerSlug, "idea.status_changed", data.idea);
+        }
         return json(data);
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
