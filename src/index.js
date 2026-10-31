@@ -12,6 +12,7 @@ const GET_CUSTOMER_PLAN_WORKFLOW_ID = "wf_e5eabbf1cbca";
 const SET_CUSTOMER_PLAN_WORKFLOW_ID = "wf_4ae1ea722645";
 const GET_CUSTOMER_SETTINGS_WORKFLOW_ID = "wf_1607747c6266";
 const SET_CUSTOMER_SETTINGS_WORKFLOW_ID = "wf_d33fbb3375fe";
+const LIST_DESTINATIONS_WORKFLOW_ID = "wf_1c6bab8b15d7";
 
 const PLANS = [
   { id: "free", name: "Free", price: "$0", period: "/mo", blurb: "Try RequestHub with your own board.", features: ["1 board", "Unlimited ideas & votes", "Community support"] },
@@ -762,6 +763,13 @@ function settingsPage(customerSlug, settings, saved) {
       width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
       border-radius: 8px; padding: 9px 11px; font-size: 13.5px; font-family: inherit; box-sizing: border-box;
     }
+    .field select {
+      width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: 9px 11px; font-size: 13.5px; font-family: inherit; box-sizing: border-box;
+      margin-bottom: 6px; cursor: pointer;
+    }
+    .field select:disabled { color: var(--text-faint); cursor: default; }
+    .field .select-note { font-size: 11.5px; color: var(--text-faint); margin: 0 0 6px; }
     .btn-submit {
       background: var(--accent); color: #fff; border: none; padding: 10px 18px; border-radius: var(--radius-btn);
       font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit;
@@ -785,37 +793,86 @@ function settingsPage(customerSlug, settings, saved) {
 
     ${saved ? `<div class="saved-note">Settings saved.</div>` : ""}
 
-    <form method="POST" action="/api/customers/${encodeURIComponent(customerSlug)}/settings">
+    <form method="POST" action="/api/customers/${encodeURIComponent(customerSlug)}/settings" id="settingsForm">
       <div class="card">
         <h2>Slack</h2>
-        <p class="hint">The channel name new submissions get posted to (e.g. <code>#feedback</code>). Leave blank to use your workspace's default channel.</p>
+        <p class="hint">The channel new submissions get posted to. Pick one from your workspace below, or leave blank to use your workspace's default channel.</p>
         <div class="field">
+          <select id="slackChannelPicker" disabled><option>Loading your Slack channels...</option></select>
+          <p class="select-note" id="slackChannelNote"></p>
           <label>Channel name</label>
-          <input name="slackChannel" placeholder="#feedback" value="${escapeHtml(settings.slackChannel || "")}" />
+          <input id="slackChannel" name="slackChannel" placeholder="#feedback" value="${escapeHtml(settings.slackChannel || "")}" />
         </div>
       </div>
 
       <div class="card">
         <h2>Linear</h2>
-        <p class="hint">The Team ID that tickets get created in when you mark an idea "Planned" or "In Progress". Find it in Linear under Settings &rarr; the team's page URL (<code>linear.app/.../team/&lt;slug&gt;/settings</code>) or the team's "Copy model UUID" action.</p>
+        <p class="hint">The team that tickets get created in when you mark an idea "Planned" or "In Progress". Pick one from your workspace below, or paste a Team ID directly.</p>
         <div class="field">
+          <select id="linearTeamPicker" disabled><option>Loading your Linear teams...</option></select>
+          <p class="select-note" id="linearTeamNote"></p>
           <label>Team ID</label>
-          <input name="linearTeamId" placeholder="e.g. 6a0351f8-9f72-49b7-a11a-753726597688" value="${escapeHtml(settings.linearTeamId || "")}" />
+          <input id="linearTeamId" name="linearTeamId" placeholder="e.g. 6a0351f8-9f72-49b7-a11a-753726597688" value="${escapeHtml(settings.linearTeamId || "")}" />
         </div>
       </div>
 
       <div class="card">
         <h2>Notion</h2>
-        <p class="hint">The Page ID of your changelog/roadmap page in Notion, where shipped ideas get archived. Find it in the page's share link - the 32-character ID at the end of the URL.</p>
+        <p class="hint">The changelog/roadmap page in Notion, where shipped ideas get archived. Pick one from your workspace below, or paste a Page ID directly.</p>
         <div class="field">
+          <select id="notionPagePicker" disabled><option>Loading your Notion pages...</option></select>
+          <p class="select-note" id="notionPageNote"></p>
           <label>Page ID</label>
-          <input name="notionPageId" placeholder="e.g. 409a930e131b8141b9b3e1f703a67f6f" value="${escapeHtml(settings.notionPageId || "")}" />
+          <input id="notionPageId" name="notionPageId" placeholder="e.g. 409a930e131b8141b9b3e1f703a67f6f" value="${escapeHtml(settings.notionPageId || "")}" />
         </div>
       </div>
 
       <button type="submit" class="btn-submit">Save settings</button>
     </form>
   </div>
+  <script>
+    var customerSlug = ${JSON.stringify(customerSlug)};
+
+    function loadPicker(kind, pickerId, noteId, inputId, currentValue) {
+      var picker = document.getElementById(pickerId);
+      var note = document.getElementById(noteId);
+      var input = document.getElementById(inputId);
+
+      fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/destinations?kind=' + kind)
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var options = (d && d.ok && d.options) || [];
+          if (!options.length) {
+            picker.innerHTML = '<option>No options found</option>';
+            picker.disabled = true;
+            note.textContent = d && d.ok
+              ? 'Nothing found yet - type the value manually below.'
+              : 'Connect this tool first on the Connect your tools page, or type the value manually below.';
+            return;
+          }
+          var html = '<option value="">Choose...</option>';
+          options.forEach(function (o) {
+            var selected = o.id === currentValue ? ' selected' : '';
+            html += '<option value="' + o.id.replace(/"/g, '&quot;') + '"' + selected + '>' + o.label.replace(/</g, '&lt;') + '</option>';
+          });
+          picker.innerHTML = html;
+          picker.disabled = false;
+          note.textContent = 'Selecting an option below fills in the field for you.';
+          picker.addEventListener('change', function () {
+            if (picker.value) input.value = picker.value;
+          });
+        })
+        .catch(function () {
+          picker.innerHTML = '<option>Could not load options</option>';
+          picker.disabled = true;
+          note.textContent = 'Type the value manually below.';
+        });
+    }
+
+    loadPicker('slack', 'slackChannelPicker', 'slackChannelNote', 'slackChannel', ${JSON.stringify(settings.slackChannel || "")});
+    loadPicker('linear', 'linearTeamPicker', 'linearTeamNote', 'linearTeamId', ${JSON.stringify(settings.linearTeamId || "")});
+    loadPicker('notion', 'notionPagePicker', 'notionPageNote', 'notionPageId', ${JSON.stringify(settings.notionPageId || "")});
+  </script>
 </body>
 </html>`;
 }
@@ -2286,6 +2343,28 @@ export default {
         });
       }
       return json({ ok: true });
+    }
+
+    const destinationsMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/destinations$/);
+    if (request.method === "GET" && destinationsMatch) {
+      const customerSlug = destinationsMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      const kind = url.searchParams.get("kind");
+      if (!["slack", "linear", "notion"].includes(kind)) {
+        return json({ ok: false, error: "kind must be one of slack, linear, notion" }, 400);
+      }
+      const endOrgId = await getTenantOrgId(env, customerSlug);
+      if (!endOrgId) {
+        return json({ ok: false, error: "no connected workspace for this customer yet" }, 404);
+      }
+      try {
+        const data = await callWorkflow(env, LIST_DESTINATIONS_WORKFLOW_ID, { kind }, endOrgId);
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
     }
 
     if (request.method === "GET" && url.pathname === "/api/ideas") {
