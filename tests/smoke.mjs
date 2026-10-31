@@ -100,7 +100,33 @@ async function run() {
     const r = await fetch(BASE_URL + "/b/" + CUSTOMER + "/ideas/" + ideaId);
     assert(r.status === 200, "status " + r.status);
   });
-  await check("vote up", async () => {
+  let voterCookie = "";
+  const votesBefore = (await (await fetch(BASE_URL + "/api/ideas?customer=" + CUSTOMER)).json()).ideas.find((i) => i.id === ideaId).votes;
+  await check("vote up (mints a voter-identity cookie)", async () => {
+    const r = await fetch(BASE_URL + "/api/ideas/" + ideaId + "/vote", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ direction: "up" }),
+    });
+    const setCookie = r.headers.get("set-cookie");
+    assert(setCookie && setCookie.includes("rh_voter="), "no rh_voter cookie was set on first vote");
+    voterCookie = setCookie.split(";")[0];
+    const body = await r.json();
+    assert(body.ok === true, "vote failed: " + JSON.stringify(body));
+    assert(body.idea.votes === votesBefore + 1, "vote count did not increase by exactly 1");
+  });
+  await check("voting up again with the same voter cookie is a no-op", async () => {
+    const r = await fetch(BASE_URL + "/api/ideas/" + ideaId + "/vote", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: voterCookie },
+      body: JSON.stringify({ direction: "up" }),
+    });
+    const body = await r.json();
+    assert(body.ok === true, "repeat vote failed: " + JSON.stringify(body));
+    assert(body.alreadyVoted === true, "repeat vote from the same visitor was not detected as a duplicate");
+    assert(body.idea.votes === votesBefore + 1, "vote count changed on a duplicate vote");
+  });
+  await check("voting up with no cookie at all also counts as a distinct visitor", async () => {
     const r = await fetch(BASE_URL + "/api/ideas/" + ideaId + "/vote", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -108,16 +134,17 @@ async function run() {
     });
     const body = await r.json();
     assert(body.ok === true, "vote failed: " + JSON.stringify(body));
-    assert(body.idea.votes >= 1, "vote count did not increase");
+    assert(body.idea.votes === votesBefore + 2, "a second distinct visitor's vote did not increase the count");
   });
-  await check("vote down (undo)", async () => {
+  await check("vote down (undo) with the original voter cookie", async () => {
     const r = await fetch(BASE_URL + "/api/ideas/" + ideaId + "/vote", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", cookie: voterCookie },
       body: JSON.stringify({ direction: "down" }),
     });
     const body = await r.json();
     assert(body.ok === true, "unvote failed: " + JSON.stringify(body));
+    assert(body.idea.votes === votesBefore + 1, "undo did not decrease the count by exactly 1");
   });
   await check("post a comment", async () => {
     const r = await fetch(BASE_URL + "/api/ideas/" + ideaId + "/comments", {

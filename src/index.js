@@ -129,10 +129,10 @@ function html(body) {
   });
 }
 
-function json(obj, status = 200) {
+function json(obj, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(obj), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8" },
+    headers: { "content-type": "application/json; charset=utf-8", ...extraHeaders },
   });
 }
 
@@ -318,6 +318,18 @@ function getCookie(request, name) {
   const header = request.headers.get("cookie") || "";
   const match = header.match(new RegExp("(?:^|;\\s*)" + name + "=([^;]*)"));
   return match ? decodeURIComponent(match[1]) : null;
+}
+
+// A long-lived, anonymous per-visitor id - not an auth credential, just lets
+// the vote workflow tell "the same browser clicked twice" from "two
+// different people voted once each" without requiring an account. Returns
+// the existing one if the request already carries it, or mints a new one.
+function getOrCreateVoterKey(request) {
+  const existing = getCookie(request, "rh_voter");
+  if (existing) return { voterKey: existing, setCookie: null };
+  const voterKey = toHex(crypto.getRandomValues(new Uint8Array(16)));
+  const setCookie = `rh_voter=${voterKey}; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly; Secure`;
+  return { voterKey, setCookie };
 }
 
 async function requireAuth(request, env, customerSlug) {
@@ -3881,12 +3893,14 @@ export default {
       } catch {
         voteBody = {};
       }
+      const { voterKey, setCookie } = getOrCreateVoterKey(request);
       try {
         const data = await callWorkflow(env, VOTE_WORKFLOW_ID, {
           ideaId: Number(voteMatch[1]),
           direction: voteBody.direction === "down" ? "down" : "up",
+          voterKey,
         });
-        return json(data);
+        return json(data, 200, setCookie ? { "set-cookie": setCookie } : {});
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
       }
