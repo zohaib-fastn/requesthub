@@ -953,12 +953,158 @@ function adminPage(customerSlug) {
 </html>`;
 }
 
+function embedJs() {
+  return `(function () {
+  var cs = document.currentScript;
+  if (!cs) return;
+  var origin = new URL(cs.src).origin;
+  var customer = cs.getAttribute('data-customer') || 'demo';
+  var COLLAPSED = { width: '64px', height: '64px' };
+  var EXPANDED = { width: '380px', height: 'min(600px, calc(100vh - 40px))' };
+
+  var iframe = document.createElement('iframe');
+  iframe.src = origin + '/widget.html?customer=' + encodeURIComponent(customer);
+  iframe.title = 'Feedback';
+  iframe.style.cssText = [
+    'position:fixed', 'bottom:20px', 'right:20px', 'border:none', 'background:transparent',
+    'z-index:2147483000', 'width:' + COLLAPSED.width, 'height:' + COLLAPSED.height,
+    'transition:width .15s ease,height .15s ease', 'color-scheme:normal',
+  ].join(';');
+  iframe.setAttribute('allowtransparency', 'true');
+  document.body.appendChild(iframe);
+
+  window.addEventListener('message', function (e) {
+    if (!e.data || e.data.source !== 'requesthub-widget') return;
+    if (e.data.type === 'open') {
+      iframe.style.width = EXPANDED.width;
+      iframe.style.height = EXPANDED.height;
+    } else if (e.data.type === 'close') {
+      iframe.style.width = COLLAPSED.width;
+      iframe.style.height = COLLAPSED.height;
+    }
+  });
+})();`;
+}
+
+function widgetPage(customerSlug) {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: transparent; font-family: -apple-system, sans-serif; overflow: hidden; }
+    .launcher {
+      width: 64px; height: 64px; border-radius: 50%; background: #6d5ef8; border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 20px rgba(0,0,0,.25);
+    }
+    .launcher svg { width: 26px; height: 26px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .panel {
+      display: none; flex-direction: column; height: 100%; background: #16151d; color: #f3f2f7;
+      border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,.4); border: 1px solid #2a2935; overflow: hidden;
+    }
+    body.open .launcher { display: none; }
+    body.open .panel { display: flex; }
+    .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #2a2935; }
+    .panel-header h1 { font-size: 14px; margin: 0; font-weight: 700; }
+    .panel-close { background: none; border: none; color: #9492a3; cursor: pointer; font-size: 18px; line-height: 1; padding: 2px; }
+    .panel-close:hover { color: #fff; }
+    .panel-body { flex: 1; overflow-y: auto; padding: 16px; }
+    .panel-body p { color: #9492a3; font-size: 12.5px; margin: 0 0 12px; }
+    .field { margin-bottom: 10px; }
+    .field input, .field textarea {
+      width: 100%; background: #1d1c26; border: 1px solid #2a2935; color: #f3f2f7; border-radius: 8px;
+      padding: 9px 11px; font-size: 13px; font-family: inherit;
+    }
+    .field textarea { resize: vertical; min-height: 60px; }
+    .btn-submit {
+      width: 100%; background: #6d5ef8; color: #fff; border: none; padding: 10px; border-radius: 8px;
+      font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .btn-submit:hover { background: #5b4de3; }
+    .success { text-align: center; padding: 20px 0; }
+    .success .check { font-size: 32px; margin-bottom: 8px; }
+    .panel-footer { padding: 10px 16px; border-top: 1px solid #2a2935; text-align: center; }
+    .panel-footer a { color: #9492a3; font-size: 11.5px; text-decoration: none; }
+    .panel-footer a:hover { color: #fff; }
+  </style>
+</head>
+<body>
+  <button class="launcher" id="launcher" aria-label="Open feedback">
+    <svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-4.8 7.6 8.5 8.5 0 0 1-9.4-1.2L3 21l1.9-4.3a8.38 8.38 0 0 1-1.2-4.4 8.5 8.5 0 0 1 7.6-8.4 8.38 8.38 0 0 1 9.5 7.1 8.5 8.5 0 0 1 .2 1.5z"/></svg>
+  </button>
+  <div class="panel">
+    <div class="panel-header">
+      <h1>Got feedback?</h1>
+      <button class="panel-close" id="closeBtn" aria-label="Close">&times;</button>
+    </div>
+    <div class="panel-body" id="panelBody">
+      <p>Tell us what's missing, broken, or could be better.</p>
+      <form id="form">
+        <div class="field"><input id="title" required maxlength="200" placeholder="What's on your mind?" /></div>
+        <div class="field"><textarea id="description" maxlength="2000" placeholder="More detail (optional)"></textarea></div>
+        <div class="field"><input id="email" type="email" placeholder="Your email (optional)" /></div>
+        <button type="submit" class="btn-submit">Send feedback</button>
+      </form>
+    </div>
+    <div class="panel-footer"><a href="/b/${encodeURIComponent(customerSlug)}" target="_blank" rel="noopener">View full feedback board &#8599;</a></div>
+  </div>
+
+  <script>
+    var customerSlug = ${JSON.stringify(customerSlug)};
+
+    function post(type) {
+      window.parent.postMessage({ source: 'requesthub-widget', type: type }, '*');
+    }
+
+    document.getElementById('launcher').addEventListener('click', function () {
+      document.body.classList.add('open');
+      post('open');
+    });
+    document.getElementById('closeBtn').addEventListener('click', function () {
+      document.body.classList.remove('open');
+      post('close');
+    });
+
+    document.getElementById('form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var title = document.getElementById('title').value.trim();
+      if (!title) return;
+      var description = document.getElementById('description').value.trim();
+      var submitterEmail = document.getElementById('email').value.trim();
+      fetch('/api/ideas', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ customerSlug: customerSlug, title: title, description: description, category: 'Feedback', submitterEmail: submitterEmail }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function () {
+          document.getElementById('panelBody').innerHTML =
+            '<div class="success"><div class="check">&#10003;</div><div>Thanks! We got it.</div></div>';
+        });
+    });
+  </script>
+</body>
+</html>`;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
     if (request.method === "GET" && (url.pathname === "/" || url.pathname === "")) {
       return html(boardPage("demo"));
+    }
+
+    if (request.method === "GET" && url.pathname === "/embed.js") {
+      return new Response(embedJs(), {
+        headers: { "content-type": "application/javascript; charset=utf-8", "cache-control": "public, max-age=300" },
+      });
+    }
+
+    if (request.method === "GET" && url.pathname === "/widget.html") {
+      const customerSlug = url.searchParams.get("customer") || "demo";
+      return html(widgetPage(customerSlug));
     }
 
     const boardMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/?$/);
@@ -998,9 +1144,18 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/api/ideas") {
       const customerSlug = url.searchParams.get("customer") || "demo";
+      const statusFilter = url.searchParams.get("status");
+      const categoryFilter = url.searchParams.get("category");
       try {
         const data = await callWorkflow(env, LIST_WORKFLOW_ID, { customerSlug });
-        return json(data);
+        let ideas = data?.ideas || [];
+        if (statusFilter && STATUSES.includes(statusFilter)) {
+          ideas = ideas.filter(function (i) { return i.status === statusFilter; });
+        }
+        if (categoryFilter) {
+          ideas = ideas.filter(function (i) { return i.category === categoryFilter; });
+        }
+        return json({ ...data, ideas });
       } catch (err) {
         return json({ ok: false, error: err.message, ideas: [] }, 502);
       }
