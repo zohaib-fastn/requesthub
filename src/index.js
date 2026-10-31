@@ -25,11 +25,12 @@ const FIND_IDEA_BY_LINEAR_ISSUE_WORKFLOW_ID = "wf_bc7a52df867b";
 const GET_LINEAR_WEBHOOK_SECRET_WORKFLOW_ID = "wf_c376837b8860";
 const OWNER_SLUG = "__owner__";
 
-// Forward-only ratchet: a Linear state change only ever moves an idea's status
-// UP this list, never back - so a ticket accidentally dragged backward in
-// Linear (or reopened) can't flap the board. "canceled" has no mapping at all:
-// it intentionally leaves the idea's RequestHub status untouched.
-const STATUS_RANK = { under_review: 0, planned: 1, in_progress: 2, shipped: 3 };
+// Bidirectional: a Linear state change updates the matching idea's status in
+// either direction (forward or backward), and an idea's status change pushed
+// from RequestHub updates the matching Linear ticket's state the same way -
+// see requesthub-update-status's syncToLinearState handling. "canceled" has no
+// mapping at all: it intentionally leaves the idea's RequestHub status
+// untouched rather than guessing at one.
 const LINEAR_STATE_TYPE_TO_STATUS = {
   triage: "planned",
   backlog: "planned",
@@ -906,9 +907,9 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
     </form>
 
     <div class="card">
-      <h2>Real-time sync from Linear</h2>
+      <h2>Real-time sync with Linear</h2>
       ${settings.linearTeamId
-        ? `<p class="hint">When a ticket's status changes in Linear, mirror it back onto the matching idea here automatically - no need to flip it by hand in both places. Sync only ever moves an idea forward (Planned &rarr; In Progress &rarr; Shipped); it never reopens or reverts one.</p>
+        ? `<p class="hint">Status stays in sync both ways - change it in Linear and it updates the idea here, change it here (Planned, In Progress, Shipped) and it moves the matching Linear ticket, including moving it backward.</p>
       <p class="hint" id="linearSyncStatus">${settings.linearWebhookEnabled
         ? `<strong style="color: var(--good);">On</strong> - watching your "${escapeHtml(settings.linearTeamId)}" team for status changes.`
         : `<strong style="color: var(--text-faint);">Off</strong>.`}</p>
@@ -3063,8 +3064,8 @@ export default {
         if (!found?.found) {
           return json({ ok: true, skipped: "no matching idea for this Linear issue" });
         }
-        if (STATUS_RANK[mappedStatus] <= STATUS_RANK[found.currentStatus]) {
-          return json({ ok: true, skipped: "not a forward status move" });
+        if (mappedStatus === found.currentStatus) {
+          return json({ ok: true, skipped: "status already matches" });
         }
 
         const endOrgId = await getTenantOrgId(env, customerSlug);
@@ -3080,6 +3081,9 @@ export default {
             status: mappedStatus,
             linearTeamId: settings?.linearTeamId || DEFAULT_LINEAR_TEAM_ID,
             notionPageId: settings?.notionPageId || DEFAULT_NOTION_PAGE_ID,
+            // This status change originated in Linear - pushing it back would
+            // just be echoing Linear's own state back at itself.
+            syncToLinearState: false,
           },
           endOrgId
         );
