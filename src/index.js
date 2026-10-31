@@ -2002,17 +2002,7 @@ function adminPage(customerSlug, isOwner) {
     .nav-right a.logout { color: var(--bad); }
     .nav-right a.owner-link { color: var(--accent); font-weight: 600; }
 
-    .page { max-width: 1040px; margin: 0 auto; padding: 24px; }
-
-    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
-    .stat-card {
-      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card);
-      padding: 14px 16px; cursor: pointer; text-align: left; font-family: inherit;
-    }
-    .stat-card.active { border-color: var(--accent); background: var(--accent-tint); }
-    .stat-count { font-size: 22px; font-weight: 700; font-family: "Manrope", monospace; }
-    .stat-label { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
-    .stat-card.active .stat-label { color: var(--accent); }
+    .page { max-width: 1280px; margin: 0 auto; padding: 24px; }
 
     .filters-row { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
     .filters-row input, .filters-row select {
@@ -2025,34 +2015,34 @@ function adminPage(customerSlug, isOwner) {
 
     .empty { color: var(--text-faint); font-size: 13.5px; text-align: center; padding: 40px 16px; }
 
-    .row { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 13px 16px; margin-bottom: 8px; display: flex; gap: 14px; align-items: flex-start; }
-    .row-body { flex: 1; min-width: 0; }
-    .row-title { font-weight: 600; font-size: 14px; }
-    .row-desc { color: var(--text-muted); font-size: 12.5px; margin-top: 2px; }
-    .row-meta { margin-top: 8px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; align-items: start; }
+    @media (max-width: 1000px) { .board { grid-template-columns: 1fr; } }
 
-    .chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-weight: 600; font-size: 11px; }
+    .column { background: var(--surface-2); border-radius: var(--radius-card); padding: 12px; min-height: 80px; transition: background-color .12s ease; }
+    .column.drag-over { background: var(--accent-tint); }
+    .column-header { display: flex; align-items: center; gap: 8px; padding: 0 2px 12px; }
+    .column-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .column-dot.under_review { background: var(--text-faint); }
+    .column-dot.planned { background: var(--info); }
+    .column-dot.in_progress { background: var(--warn); }
+    .column-dot.shipped { background: var(--good); }
+    .column-title { font-weight: 700; font-size: 13px; color: var(--text); }
+    .column-count { margin-left: auto; background: var(--card); color: var(--text-faint); font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
+
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 13px; margin-bottom: 8px; cursor: grab; }
+    .card.dragging { opacity: 0.4; }
+    .card-title { font-weight: 600; font-size: 13px; color: var(--text); }
+    .card-desc { color: var(--text-muted); font-size: 11.5px; margin-top: 4px; line-height: 1.4; }
+    .card-meta { margin-top: 9px; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+
+    .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-weight: 600; font-size: 10.5px; }
     .chip.cat-Feature { background: var(--accent-tint); color: var(--accent); }
     .chip.cat-Bug { background: var(--bad-tint); color: var(--bad); }
     .chip.cat-Feedback { background: var(--good-tint); color: var(--good); }
     .chip.badge { background: var(--surface-3); color: var(--text-muted); text-decoration: none; }
     .chip.badge:hover { color: var(--text); }
-
-    .status-select {
-      appearance: none; -webkit-appearance: none; border: none; cursor: pointer; font-family: inherit;
-      font-size: 11px; font-weight: 600; padding: 3px 22px 3px 9px; border-radius: 999px;
-      background-repeat: no-repeat; background-position: right 7px center; background-size: 9px;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239492a3' stroke-width='3'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-    }
-    .status-select.under_review { background-color: var(--surface-3); color: var(--text-muted); }
-    .status-select.planned { background-color: var(--info-tint); color: var(--info); }
-    .status-select.in_progress { background-color: var(--warn-tint); color: var(--warn); }
-    .status-select.shipped { background-color: var(--good-tint); color: var(--good); }
-    .status-select option { background: var(--card); color: var(--text); }
-
-    .row-right { flex-shrink: 0; text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
-    .row-votes { font-size: 15px; font-weight: 700; font-family: "Manrope", monospace; }
-    .row-date { color: var(--text-faint); font-size: 11px; }
+    .card-votes { color: var(--text-faint); font-size: 10.5px; margin-left: auto; font-weight: 600; }
+    .empty-col { color: var(--text-faint); font-size: 12px; padding: 10px 2px; }
   </style>
 </head>
 <body>
@@ -2069,7 +2059,6 @@ function adminPage(customerSlug, isOwner) {
   </div>
 
   <div class="page">
-    <div class="stats" id="stats"></div>
     <div class="filters-row">
       <input id="search" placeholder="Search feedback..." />
       <select id="category">
@@ -2078,21 +2067,16 @@ function adminPage(customerSlug, isOwner) {
         <option value="Bug">Bug</option>
         <option value="Feedback">Feedback</option>
       </select>
-      <select id="sort">
-        <option value="new">Newest</option>
-        <option value="votes">Most voted</option>
-      </select>
     </div>
-    <div id="list"><div class="empty">Loading...</div></div>
+    <div class="board" id="board"></div>
   </div>
 
   <script>
     const customerSlug = ${JSON.stringify(customerSlug)};
     const statuses = ${JSON.stringify(STATUSES)};
     let allIdeas = [];
-    let activeStatus = "all";
-
     let STATUS_LABELS = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped" };
+    let draggingIdeaId = null;
 
     function escapeHtml(s) {
       const d = document.createElement('div');
@@ -2100,91 +2084,92 @@ function adminPage(customerSlug, isOwner) {
       return d.innerHTML;
     }
 
-    function renderStats() {
-      const el = document.getElementById('stats');
-      const cards = [{ key: 'all', label: 'All' }].concat(
-        statuses.map(function (s) { return { key: s, label: STATUS_LABELS[s] }; })
-      );
-      el.innerHTML = cards.map(function (c) {
-        const count = c.key === 'all' ? allIdeas.length : allIdeas.filter(function (i) { return i.status === c.key; }).length;
-        return '<button class="stat-card' + (activeStatus === c.key ? ' active' : '') + '" data-status="' + c.key + '">' +
-          '<div class="stat-count">' + count + '</div><div class="stat-label">' + c.label + '</div></button>';
-      }).join('');
-      el.querySelectorAll('.stat-card').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          activeStatus = btn.getAttribute('data-status');
-          render();
-        });
-      });
+    function changeStatus(ideaId, status) {
+      return fetch('/api/ideas/' + ideaId + '/status', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: status, customerSlug: customerSlug }),
+      }).then(function (r) { return r.json(); });
     }
 
     function render() {
-      renderStats();
-      const list = document.getElementById('list');
+      const board = document.getElementById('board');
       const q = (document.getElementById('search').value || '').toLowerCase();
       const category = document.getElementById('category').value;
-      const sort = document.getElementById('sort').value;
 
-      let ideas = allIdeas.filter(function (i) {
-        if (activeStatus !== 'all' && i.status !== activeStatus) return false;
+      const filtered = allIdeas.filter(function (i) {
         if (category !== 'all' && i.category !== category) return false;
         if (q && i.title.toLowerCase().indexOf(q) === -1 && (i.description || '').toLowerCase().indexOf(q) === -1) return false;
         return true;
       });
-      ideas = ideas.slice().sort(function (a, b) {
-        if (sort === 'votes') return b.votes - a.votes;
-        return new Date(b.created_at) - new Date(a.created_at);
-      });
 
-      if (!ideas.length) {
-        list.innerHTML = '<div class="empty">Nothing matches these filters.</div>';
-        return;
-      }
-
-      list.innerHTML = ideas.map(function (i) {
-        const options = statuses.map(function (s) {
-          return '<option value="' + s + '"' + (s === i.status ? ' selected' : '') + '>' + STATUS_LABELS[s] + '</option>';
-        }).join('');
-        const badges = [];
-        if (i.submitter_email) badges.push('<span class="chip badge">' + escapeHtml(i.submitter_email) + '</span>');
-        if (i.linear_issue_url) badges.push('<a class="chip badge" href="' + i.linear_issue_url + '" target="_blank" rel="noopener">Linear ticket &#8599;</a>');
-        if (i.notion_archived_at) badges.push('<span class="chip badge">Archived to Notion</span>');
-        const date = i.created_at ? new Date(i.created_at).toLocaleDateString() : '';
-        return '<div class="row">' +
-          '<div class="row-body">' +
-          '<div class="row-title">' + escapeHtml(i.title) + '</div>' +
-          (i.description ? '<div class="row-desc">' + escapeHtml(i.description) + '</div>' : '') +
-          '<div class="row-meta">' +
-          '<span class="chip cat-' + i.category + '">' + i.category + '</span>' +
-          '<select class="status-select ' + i.status + '" data-idea-id="' + i.id + '">' + options + '</select>' +
-          badges.join('') +
-          '</div>' +
-          '</div>' +
-          '<div class="row-right">' +
-          '<div class="row-votes">' + i.votes + ' votes</div>' +
-          '<div class="row-date">' + date + '</div>' +
-          '</div>' +
+      board.innerHTML = statuses.map(function (status) {
+        const items = filtered.filter(function (i) { return i.status === status; })
+          .sort(function (a, b) { return b.votes - a.votes; });
+        const cards = items.length
+          ? items.map(function (i) {
+              const badges = [];
+              if (i.submitter_email) badges.push('<span class="chip badge">' + escapeHtml(i.submitter_email) + '</span>');
+              if (i.linear_issue_url) badges.push('<a class="chip badge" href="' + i.linear_issue_url + '" target="_blank" rel="noopener">Linear &#8599;</a>');
+              if (i.notion_archived_at) badges.push('<span class="chip badge">Notion</span>');
+              return '<div class="card" draggable="true" data-idea-id="' + i.id + '">' +
+                '<div class="card-title">' + escapeHtml(i.title) + '</div>' +
+                (i.description ? '<div class="card-desc">' + escapeHtml(i.description) + '</div>' : '') +
+                '<div class="card-meta">' +
+                '<span class="chip cat-' + i.category + '">' + i.category + '</span>' +
+                badges.join('') +
+                '<span class="card-votes">' + i.votes + ' votes</span>' +
+                '</div>' +
+                '</div>';
+            }).join('')
+          : '<div class="empty-col">Nothing here.</div>';
+        return '<div class="column" data-status="' + status + '">' +
+          '<div class="column-header"><span class="column-dot ' + status + '"></span>' +
+          '<span class="column-title">' + STATUS_LABELS[status] + '</span>' +
+          '<span class="column-count">' + items.length + '</span></div>' +
+          cards +
           '</div>';
       }).join('');
 
-      list.querySelectorAll('.status-select').forEach(function (sel) {
-        sel.addEventListener('change', function () {
-          sel.className = 'status-select ' + sel.value;
-          const ideaId = sel.getAttribute('data-idea-id');
-          fetch('/api/ideas/' + ideaId + '/status', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ status: sel.value, customerSlug: customerSlug }),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function () { load(); });
+      board.querySelectorAll('.card').forEach(function (card) {
+        card.addEventListener('dragstart', function (e) {
+          draggingIdeaId = card.getAttribute('data-idea-id');
+          card.classList.add('dragging');
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', draggingIdeaId);
+        });
+        card.addEventListener('dragend', function () {
+          card.classList.remove('dragging');
+          draggingIdeaId = null;
+        });
+      });
+
+      board.querySelectorAll('.column').forEach(function (col) {
+        col.addEventListener('dragover', function (e) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          col.classList.add('drag-over');
+        });
+        col.addEventListener('dragleave', function () {
+          col.classList.remove('drag-over');
+        });
+        col.addEventListener('drop', function (e) {
+          e.preventDefault();
+          col.classList.remove('drag-over');
+          const ideaId = e.dataTransfer.getData('text/plain') || draggingIdeaId;
+          const targetStatus = col.getAttribute('data-status');
+          if (!ideaId) return;
+          const idea = allIdeas.find(function (i) { return String(i.id) === String(ideaId); });
+          if (!idea || idea.status === targetStatus) return;
+          idea.status = targetStatus;
+          render();
+          changeStatus(ideaId, targetStatus).then(function () { load(); });
         });
       });
     }
 
     document.getElementById('search').addEventListener('input', render);
     document.getElementById('category').addEventListener('change', render);
-    document.getElementById('sort').addEventListener('change', render);
 
     function load() {
       fetch('/api/ideas?customer=' + encodeURIComponent(customerSlug))
