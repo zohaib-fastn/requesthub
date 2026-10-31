@@ -742,7 +742,8 @@ function connectPage(customerSlug, endOrgId, token, setupLinks, isOwner) {
 </html>`;
 }
 
-function settingsPage(customerSlug, settings, saved, isOwner) {
+function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
+  const embedSnippet = `<script src="${baseUrl}/embed.js" data-customer="${customerSlug}"><\/script>`;
   return `<!doctype html>
 <html>
 <head>
@@ -787,6 +788,14 @@ function settingsPage(customerSlug, settings, saved, isOwner) {
     }
     .btn-submit:hover { background: var(--accent-hover); }
     .saved-note { color: var(--good); font-size: 13px; font-weight: 600; margin-bottom: 14px; }
+    .embed-code { display: flex; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 11px; }
+    .embed-code code { flex: 1; min-width: 0; font-size: 12.5px; color: var(--accent-hover); overflow-x: auto; white-space: pre; }
+    .btn-copy {
+      flex-shrink: 0; background: var(--surface-3); color: var(--text); border: none; padding: 7px 12px; border-radius: var(--radius-btn);
+      font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .btn-copy:hover { background: var(--border); }
+    .btn-copy.copied { background: var(--good-tint); color: var(--good); }
   </style>
 </head>
 <body>
@@ -843,9 +852,28 @@ function settingsPage(customerSlug, settings, saved, isOwner) {
 
       <button type="submit" class="btn-submit">Save settings</button>
     </form>
+
+    <div class="card">
+      <h2>Embed on your own site</h2>
+      <p class="hint">Add this one line to your website to get a floating feedback button. It works on any domain - no CORS setup, no account, nothing else to configure. Submissions land straight on your board above.</p>
+      <div class="embed-code">
+        <code id="embedSnippet">${escapeHtml(embedSnippet)}</code>
+        <button type="button" class="btn-copy" id="copyEmbedBtn">Copy</button>
+      </div>
+    </div>
   </div>
   <script>
     var customerSlug = ${JSON.stringify(customerSlug)};
+
+    document.getElementById('copyEmbedBtn').addEventListener('click', function () {
+      var btn = this;
+      var text = document.getElementById('embedSnippet').textContent;
+      navigator.clipboard.writeText(text).then(function () {
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(function () { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+      });
+    });
 
     function loadPicker(kind, pickerId, noteId, inputId, currentValue) {
       var picker = document.getElementById(pickerId);
@@ -2558,7 +2586,7 @@ export default {
       try {
         settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug });
       } catch {}
-      return html(settingsPage(customerSlug, settings || {}, url.searchParams.get("saved") === "1", isOwner));
+      return html(settingsPage(customerSlug, settings || {}, url.searchParams.get("saved") === "1", isOwner, url.origin));
     }
 
     const settingsSaveMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/settings$/);
