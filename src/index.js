@@ -18,6 +18,7 @@ const DEFAULT_NOTION_PAGE_ID = "409a930e-131b-8141-b9b3-e1f703a67f6f";
 // left out - the connect page shows a clear message for any unmapped slug.
 const TENANT_ORG_IDS = {
   "acme-saas": "b14dc996-d036-4797-8908-adbc63f15b77",
+  beacon: "c820df81-5aa4-47e8-8071-52dbe011c21d",
   flowdesk: "16cdab4e-702b-4d80-a16c-7a9e8715125e",
   northstar: "83c973c7-601a-4bc5-88f4-d0c73e10c22f",
   "parallel-labs": "ab68e269-2ce3-44ca-ae6b-f8e5ffc3c755",
