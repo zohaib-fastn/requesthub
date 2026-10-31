@@ -28,6 +28,7 @@ const LIST_WEBHOOKS_WORKFLOW_ID = "wf_655ab12c26b8";
 const DELETE_WEBHOOK_WORKFLOW_ID = "wf_c485e6e5025a";
 const LIST_WEBHOOKS_FOR_DELIVERY_WORKFLOW_ID = "wf_17330509843e";
 const RECORD_WEBHOOK_DELIVERY_WORKFLOW_ID = "wf_f4502de11768";
+const DELETE_IDEA_WORKFLOW_ID = "wf_90a8f1268843";
 const OWNER_SLUG = "__owner__";
 
 // Bidirectional: a Linear state change updates the matching idea's status in
@@ -2159,11 +2160,16 @@ function adminPage(customerSlug, isOwner) {
     .column-title { font-weight: 700; font-size: 13px; color: var(--text); }
     .column-count { margin-left: auto; background: var(--card); color: var(--text-faint); font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
 
-    .card { background: var(--card); border: 1px solid var(--border); border-left-width: 3px; border-radius: 12px; padding: 12px 13px 12px 11px; margin-bottom: 8px; cursor: grab; }
+    .card { position: relative; background: var(--card); border: 1px solid var(--border); border-left-width: 3px; border-radius: 12px; padding: 12px 28px 12px 11px; margin-bottom: 8px; cursor: grab; }
     .card.cat-Feature { border-left-color: var(--accent); }
     .card.cat-Bug { border-left-color: var(--bad); }
     .card.cat-Feedback { border-left-color: var(--good); }
     .card.dragging { opacity: 0.4; }
+    .card-delete-btn {
+      position: absolute; top: 6px; right: 6px; width: 18px; height: 18px; line-height: 16px; text-align: center;
+      border: none; border-radius: 50%; background: transparent; color: var(--text-faint); font-size: 15px; cursor: pointer; padding: 0;
+    }
+    .card-delete-btn:hover { background: var(--bad-tint); color: var(--bad); }
     .card-title { font-weight: 600; font-size: 13px; color: var(--text); }
     .card-desc { color: var(--text-muted); font-size: 11.5px; margin-top: 4px; line-height: 1.4; }
     .card-meta { margin-top: 9px; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
@@ -2246,6 +2252,7 @@ function adminPage(customerSlug, isOwner) {
               if (i.linear_issue_url) badges.push('<a class="chip badge" href="' + i.linear_issue_url + '" target="_blank" rel="noopener">Linear &#8599;</a>');
               if (i.notion_archived_at) badges.push('<span class="chip badge">Notion</span>');
               return '<div class="card cat-' + i.category + '" draggable="true" data-idea-id="' + i.id + '">' +
+                '<button type="button" class="card-delete-btn" data-idea-id="' + i.id + '" title="Delete">&times;</button>' +
                 '<div class="card-title">' + escapeHtml(i.title) + '</div>' +
                 (i.description ? '<div class="card-desc">' + escapeHtml(i.description) + '</div>' : '') +
                 '<div class="card-meta">' +
@@ -2274,6 +2281,19 @@ function adminPage(customerSlug, isOwner) {
         card.addEventListener('dragend', function () {
           card.classList.remove('dragging');
           draggingIdeaId = null;
+        });
+      });
+
+      board.querySelectorAll('.card-delete-btn').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var ideaId = btn.getAttribute('data-idea-id');
+          if (!window.confirm('Delete this idea permanently? This cannot be undone.')) return;
+          fetch('/api/ideas/' + ideaId, {
+            method: 'DELETE',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ customerSlug: customerSlug }),
+          }).then(function () { load(); });
         });
       });
 
@@ -3531,6 +3551,32 @@ export default {
           authorName: body.authorName || "Anonymous",
           authorEmail: body.authorEmail || "",
           body: body.body,
+        });
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
+    const deleteIdeaMatch = url.pathname.match(/^\/api\/ideas\/(\d+)$/);
+    if (request.method === "DELETE" && deleteIdeaMatch) {
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        body = {};
+      }
+      const deleteCustomerSlug = (body.customerSlug || "").trim();
+      if (!deleteCustomerSlug) {
+        return json({ ok: false, error: "customerSlug is required" }, 400);
+      }
+      if (!(await requireAuth(request, env, deleteCustomerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      try {
+        const data = await callWorkflow(env, DELETE_IDEA_WORKFLOW_ID, {
+          ideaId: Number(deleteIdeaMatch[1]),
+          customerSlug: deleteCustomerSlug,
         });
         return json(data);
       } catch (err) {
