@@ -70,7 +70,9 @@ const DESIGN_TOKENS = `
 const FASTN_BASE = "https://api.fastn.dev";
 const STATUSES = ["under_review", "planned", "in_progress", "shipped"];
 const DEFAULT_LINEAR_TEAM_ID = "6a0351f8-9f72-49b7-a11a-753726597688";
-const DEFAULT_NOTION_PAGE_ID = "409a930e-131b-8141-b9b3-e1f703a67f6f";
+// A real Notion DATABASE id (not a page) - each shipped idea becomes its own
+// structured row via createDatabaseRowPlainText, not a paragraph appended to a page.
+const DEFAULT_NOTION_PAGE_ID = "40aa930e-131b-81ab-a587-c6ee135c8c82";
 
 // Maps a board's customerSlug to its real Fastn tenant (end_org_id), so the
 // embedded connect page knows which tenant's widgets to show. "demo" has no
@@ -858,12 +860,12 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
 
       <div class="card">
         <h2>Notion</h2>
-        <p class="hint">The changelog/roadmap page in Notion, where shipped ideas get archived. Pick one from your workspace below, or paste a Page ID directly.</p>
+        <p class="hint">The changelog database in Notion - each shipped idea becomes its own row (title, category, description), not a line appended to a page. Pick one from your workspace below, or paste a Database ID directly.</p>
         <div class="field">
-          <select id="notionPagePicker" disabled><option>Loading your Notion pages...</option></select>
+          <select id="notionPagePicker" disabled><option>Loading your Notion databases...</option></select>
           <p class="select-note" id="notionPageNote"></p>
-          <label>Page ID</label>
-          <input id="notionPageId" name="notionPageId" placeholder="e.g. 409a930e131b8141b9b3e1f703a67f6f" value="${escapeHtml(settings.notionPageId || "")}" />
+          <label>Database ID</label>
+          <input id="notionPageId" name="notionPageId" placeholder="e.g. 40aa930e131b81aba587c6ee135c8c82" value="${escapeHtml(settings.notionPageId || "")}" />
         </div>
       </div>
 
