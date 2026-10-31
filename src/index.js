@@ -1610,7 +1610,7 @@ function boardPage(customerSlug, isOwner) {
             <button class="filter-tab" data-sort="comments">Most commented</button>
           </div>
           <select id="statusFilter"><option value="all">All statuses</option></select>
-          <input id="search" placeholder="Search feedback..." />
+          <input id="search" placeholder="Search feedback... (press /)" title="Press / to search, c to compose" />
         </div>
 
         <div id="list"><div class="empty">Loading...</div></div>
@@ -1924,6 +1924,25 @@ function boardPage(customerSlug, isOwner) {
     });
     document.getElementById('cancelFormBtn').addEventListener('click', function () {
       document.getElementById('formCard').classList.remove('open');
+    });
+
+    document.addEventListener('keydown', function (e) {
+      const tag = (document.activeElement && document.activeElement.tagName) || '';
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+      if (e.key === 'Escape') {
+        document.getElementById('formCard').classList.remove('open');
+        if (document.activeElement) document.activeElement.blur();
+        return;
+      }
+      if (typing) return;
+      if (e.key === 'c') {
+        e.preventDefault();
+        document.getElementById('formCard').classList.add('open');
+        document.getElementById('title').focus();
+      } else if (e.key === '/') {
+        e.preventDefault();
+        document.getElementById('search').focus();
+      }
     });
 
     document.getElementById('submit-form').addEventListener('submit', function (e) {
