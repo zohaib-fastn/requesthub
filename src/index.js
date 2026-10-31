@@ -14,6 +14,11 @@ const GET_CUSTOMER_SETTINGS_WORKFLOW_ID = "wf_1607747c6266";
 const SET_CUSTOMER_SETTINGS_WORKFLOW_ID = "wf_d33fbb3375fe";
 const LIST_DESTINATIONS_WORKFLOW_ID = "wf_1c6bab8b15d7";
 const LIST_CUSTOMERS_WORKFLOW_ID = "wf_c977bddd9248";
+const SEND_MAGIC_LINK_WORKFLOW_ID = "wf_ddff5c764c25";
+const VERIFY_MAGIC_LINK_WORKFLOW_ID = "wf_068beffe1147";
+const LIST_USERS_WORKFLOW_ID = "wf_dc3c708922b8";
+const ADD_USER_WORKFLOW_ID = "wf_598118e16bcb";
+const REMOVE_USER_WORKFLOW_ID = "wf_dccff8e93fa9";
 const OWNER_SLUG = "__owner__";
 
 const PLANS = [
@@ -178,8 +183,10 @@ async function hmacKey(env) {
   );
 }
 
-async function createSessionToken(env, customerSlug) {
-  const payloadBytes = new TextEncoder().encode(JSON.stringify({ slug: customerSlug, exp: Date.now() + SESSION_TTL_MS }));
+async function createSessionToken(env, customerSlug, email) {
+  const payload = { slug: customerSlug, exp: Date.now() + SESSION_TTL_MS };
+  if (email) payload.email = email;
+  const payloadBytes = new TextEncoder().encode(JSON.stringify(payload));
   const key = await hmacKey(env);
   const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, payloadBytes));
   return `${base64UrlEncode(payloadBytes)}.${base64UrlEncode(sig)}`;
@@ -796,6 +803,16 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
     }
     .btn-copy:hover { background: var(--border); }
     .btn-copy.copied { background: var(--good-tint); color: var(--good); }
+    .team-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .team-row:last-child { border-bottom: none; }
+    .team-row .btn-remove { background: none; border: none; color: var(--bad); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .team-row .btn-remove:hover { text-decoration: underline; }
+    .team-empty { color: var(--text-faint); font-size: 12.5px; padding: 4px 0 10px; }
+    .team-invite-row { display: flex; gap: 8px; margin-top: 10px; }
+    .team-invite-row input {
+      flex: 1; background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: 9px 11px; font-size: 13px; font-family: inherit;
+    }
   </style>
 </head>
 <body>
@@ -862,6 +879,17 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
       </div>
       <p class="hint" style="margin-top: 10px;">Optional: add <code style="background:none;border:none;padding:0;display:inline;">data-color="#ff6600"</code> to match your brand, and <code style="background:none;border:none;padding:0;display:inline;">data-position="bottom-left"</code> / <code style="background:none;border:none;padding:0;display:inline;">"top-left"</code> / <code style="background:none;border:none;padding:0;display:inline;">"top-right"</code> to move it (defaults to bottom-right, current purple).</p>
     </div>
+
+    <div class="card">
+      <h2>Team</h2>
+      <p class="hint">Invite teammates to sign in with their own email instead of sharing the admin password. Anyone invited gets full admin access, same as the shared password.</p>
+      <div id="teamList"></div>
+      <div class="team-invite-row">
+        <input type="email" id="inviteEmail" placeholder="teammate@company.com" />
+        <button type="button" class="btn-copy" id="inviteBtn">Invite</button>
+      </div>
+      <p class="hint" id="inviteNote" style="margin-top: 8px;"></p>
+    </div>
   </div>
   <script>
     var customerSlug = ${JSON.stringify(customerSlug)};
@@ -915,6 +943,58 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
     loadPicker('slack', 'slackChannelPicker', 'slackChannelNote', 'slackChannel', ${JSON.stringify(settings.slackChannel || "")});
     loadPicker('linear', 'linearTeamPicker', 'linearTeamNote', 'linearTeamId', ${JSON.stringify(settings.linearTeamId || "")});
     loadPicker('notion', 'notionPagePicker', 'notionPageNote', 'notionPageId', ${JSON.stringify(settings.notionPageId || "")});
+
+    function loadTeam() {
+      fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/users')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var users = (d && d.ok && d.users) || [];
+          var list = document.getElementById('teamList');
+          if (!users.length) {
+            list.innerHTML = '<p class="team-empty">No teammates invited yet - everyone uses the shared admin password above.</p>';
+            return;
+          }
+          list.innerHTML = users.map(function (u) {
+            var email = u.email.replace(/</g, '&lt;');
+            return '<div class="team-row"><span>' + email + '</span>' +
+              '<button type="button" class="btn-remove" data-email="' + email + '">Remove</button></div>';
+          }).join('');
+          list.querySelectorAll('.btn-remove').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/users/remove', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ email: btn.getAttribute('data-email') }),
+              }).then(loadTeam);
+            });
+          });
+        });
+    }
+    loadTeam();
+
+    document.getElementById('inviteBtn').addEventListener('click', function () {
+      var input = document.getElementById('inviteEmail');
+      var note = document.getElementById('inviteNote');
+      var email = input.value.trim();
+      if (!email) return;
+      fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/users', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: email }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.ok) {
+            input.value = '';
+            note.textContent = 'Invited - they can now sign in with "' + email + '" from the login page.';
+            note.style.color = 'var(--good)';
+            loadTeam();
+          } else {
+            note.textContent = d.error || 'Could not add that teammate.';
+            note.style.color = 'var(--bad)';
+          }
+        });
+    });
   </script>
 </body>
 </html>`;
@@ -2104,6 +2184,11 @@ function loginPage(customerSlug, mode, errorMsg, next, isOwner) {
     .error { color: var(--bad); font-size: 12.5px; margin: -4px 0 12px; }
     .back { display: block; text-align: center; margin-top: 16px; color: var(--text-muted); font-size: 12.5px; text-decoration: none; }
     .back:hover { color: var(--text); }
+    .divider { display: flex; align-items: center; gap: 10px; margin: 18px 0; color: var(--text-faint); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+    .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+    .btn-secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--surface-3); }
+    .magic-note { color: var(--good); font-size: 12.5px; text-align: center; margin: 0; }
   </style>
 </head>
 <body>
@@ -2119,6 +2204,18 @@ function loginPage(customerSlug, mode, errorMsg, next, isOwner) {
       <input id="password" type="password" placeholder="Password" required minlength="6" autofocus />
       <button type="submit">${isSetup ? "Set password & continue" : "Log in"}</button>
     </form>
+
+    ${
+      isSetup
+        ? ""
+        : `<div class="divider">or</div>
+    <form id="magicForm">
+      <input id="magicEmail" type="email" placeholder="Your invited email address" required />
+      <button type="submit" class="btn-secondary">Email me a sign-in link</button>
+    </form>
+    <p class="magic-note" id="magicNote" style="display:none;">If that email is on this board's team, a sign-in link is on its way - check your inbox.</p>`
+    }
+
     <a class="back" href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
     ${isOwner ? `<a class="back" href="/owner">&larr; Owner console</a>` : ""}
   </div>
@@ -2140,6 +2237,30 @@ function loginPage(customerSlug, mode, errorMsg, next, isOwner) {
           }
         });
     });
+
+    var magicForm = document.getElementById('magicForm');
+    if (magicForm) {
+      magicForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var email = document.getElementById('magicEmail').value;
+        var btn = magicForm.querySelector('button');
+        btn.disabled = true;
+        btn.textContent = 'Sending...';
+        fetch('/api/customers/${encodeURIComponent(customerSlug)}/magic-link', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email: email }),
+        })
+          .then(function () {
+            magicForm.style.display = 'none';
+            document.getElementById('magicNote').style.display = 'block';
+          })
+          .catch(function () {
+            btn.disabled = false;
+            btn.textContent = 'Email me a sign-in link';
+          });
+      });
+    }
   </script>
 </body>
 </html>`;
@@ -2499,6 +2620,105 @@ export default {
           `${sessionCookieName(customerSlug)}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`
         );
         return res;
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
+    const magicLinkMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/magic-link$/);
+    if (request.method === "POST" && magicLinkMatch) {
+      const customerSlug = magicLinkMatch[1];
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ ok: false, error: "invalid JSON body" }, 400);
+      }
+      const email = (body.email || "").trim().toLowerCase();
+      if (!email) {
+        return json({ ok: false, error: "email is required" }, 400);
+      }
+      const token = base64UrlEncode(crypto.getRandomValues(new Uint8Array(32)));
+      const loginUrl = `${url.origin}/b/${encodeURIComponent(customerSlug)}/magic?token=${encodeURIComponent(token)}`;
+      try {
+        await callWorkflow(env, SEND_MAGIC_LINK_WORKFLOW_ID, { customerSlug, email, token, loginUrl });
+      } catch {}
+      // Always ok:true regardless of whether the email is actually on the team, so this
+      // endpoint can't be used to enumerate which addresses have access to a given board.
+      return json({ ok: true });
+    }
+
+    const magicVerifyMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/magic\/?$/);
+    if (request.method === "GET" && magicVerifyMatch) {
+      const customerSlug = magicVerifyMatch[1];
+      const token = url.searchParams.get("token") || "";
+      try {
+        const result = await callWorkflow(env, VERIFY_MAGIC_LINK_WORKFLOW_ID, { token });
+        if (!result?.ok || result.customerSlug !== customerSlug) {
+          return html(loginPage(customerSlug, "login", result?.error || "That sign-in link is invalid or expired."));
+        }
+        const sessionToken = await createSessionToken(env, customerSlug, result.email);
+        const res = new Response(null, {
+          status: 302,
+          headers: { Location: `/b/${encodeURIComponent(customerSlug)}/admin` },
+        });
+        res.headers.append(
+          "Set-Cookie",
+          `${sessionCookieName(customerSlug)}=${sessionToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`
+        );
+        return res;
+      } catch (err) {
+        return html(loginPage(customerSlug, "login", "Could not verify that link - try again."));
+      }
+    }
+
+    const usersMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/users$/);
+    if (request.method === "GET" && usersMatch) {
+      const customerSlug = usersMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      try {
+        const data = await callWorkflow(env, LIST_USERS_WORKFLOW_ID, { customerSlug });
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message, users: [] }, 502);
+      }
+    }
+    if (request.method === "POST" && usersMatch) {
+      const customerSlug = usersMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ ok: false, error: "invalid JSON body" }, 400);
+      }
+      try {
+        const data = await callWorkflow(env, ADD_USER_WORKFLOW_ID, { customerSlug, email: body.email });
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
+    const removeUserMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/users\/remove$/);
+    if (request.method === "POST" && removeUserMatch) {
+      const customerSlug = removeUserMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ ok: false, error: "invalid JSON body" }, 400);
+      }
+      try {
+        const data = await callWorkflow(env, REMOVE_USER_WORKFLOW_ID, { customerSlug, email: body.email });
+        return json(data);
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
       }
