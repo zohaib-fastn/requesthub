@@ -10,6 +10,8 @@ const GET_CUSTOMER_ORG_WORKFLOW_ID = "wf_c754da22758d";
 const SET_CUSTOMER_ORG_WORKFLOW_ID = "wf_3978c47d84a7";
 const GET_CUSTOMER_PLAN_WORKFLOW_ID = "wf_e5eabbf1cbca";
 const SET_CUSTOMER_PLAN_WORKFLOW_ID = "wf_4ae1ea722645";
+const GET_CUSTOMER_SETTINGS_WORKFLOW_ID = "wf_1607747c6266";
+const SET_CUSTOMER_SETTINGS_WORKFLOW_ID = "wf_d33fbb3375fe";
 
 const PLANS = [
   { id: "free", name: "Free", price: "$0", period: "/mo", blurb: "Try RequestHub with your own board.", features: ["1 board", "Unlimited ideas & votes", "Community support"] },
@@ -99,15 +101,22 @@ function json(obj, status = 200) {
   });
 }
 
-async function callWorkflow(env, workflowId, input) {
+async function callWorkflow(env, workflowId, input, endOrgId) {
+  const headers = {
+    Authorization: `Bearer ${env.FASTN_API_KEY}`,
+    "X-fastn-Test-Mode": "true",
+    "x-fastn-env": "test",
+    "Content-Type": "application/json",
+  };
+  // Without this, a MULTI_TENANT connector call inside the workflow (Slack post,
+  // Linear ticket, Notion archive) falls back to this org's own sole-active
+  // connection instead of the tenant's - meaning every customer's status changes
+  // would silently use OUR Slack/Linear/Notion regardless of what they connected.
+  if (endOrgId) headers["x-end-org-id"] = endOrgId;
+
   const res = await fetch(`${FASTN_BASE}/api/v1/workflows/${workflowId}/execute`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.FASTN_API_KEY}`,
-      "X-fastn-Test-Mode": "true",
-      "x-fastn-env": "test",
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify({ input }),
   });
   const body = await res.json().catch(() => ({}));
@@ -704,6 +713,7 @@ function connectPage(customerSlug, endOrgId, token, setupLinks) {
     <div class="logo-mark">R</div>
     <div class="brand">RequestHub</div>
     <a class="back" href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+    <a class="back" href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
     <a class="back" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
   </div>
   <div class="page">
@@ -718,6 +728,93 @@ function connectPage(customerSlug, endOrgId, token, setupLinks) {
     <div class="frame-wrap">
       <iframe src="${FASTN_BASE}/api/v1/embed/iframe?token=${encodeURIComponent(token)}&org-id=${encodeURIComponent(endOrgId)}&theme=light" allow="clipboard-write"></iframe>
     </div>
+  </div>
+</body>
+</html>`;
+}
+
+function settingsPage(customerSlug, settings, saved) {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings - RequestHub</title>
+  ${DESIGN_FONT_LINK}
+  <style>
+    ${DESIGN_TOKENS}
+    .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+    .brand { font-weight: 700; font-size: 15px; }
+    .back { margin-left: auto; color: var(--text-muted); font-size: 13px; text-decoration: none; }
+    .back:hover { color: var(--text); }
+    .page { max-width: 640px; margin: 0 auto; padding: 24px; }
+    .hero { margin-bottom: 20px; }
+    .hero h1 { font-size: 19px; margin: 0 0 4px; }
+    .hero p { margin: 0; color: var(--text-muted); font-size: 13.5px; }
+
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 18px 20px; margin-bottom: 14px; }
+    .card h2 { font-size: 14px; margin: 0 0 3px; }
+    .card .hint { color: var(--text-muted); font-size: 12.5px; margin: 0 0 12px; line-height: 1.5; }
+    .field { margin-bottom: 12px; }
+    .field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-muted); margin-bottom: 5px; }
+    .field input {
+      width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: 9px 11px; font-size: 13.5px; font-family: inherit; box-sizing: border-box;
+    }
+    .btn-submit {
+      background: var(--accent); color: #fff; border: none; padding: 10px 18px; border-radius: var(--radius-btn);
+      font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .btn-submit:hover { background: var(--accent-hover); }
+    .saved-note { color: var(--good); font-size: 13px; font-weight: 600; margin-bottom: 14px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo-mark">R</div>
+    <div class="brand">RequestHub</div>
+    <a class="back" href="/b/${encodeURIComponent(customerSlug)}/admin">&larr; Back to triage</a>
+    <a class="back" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
+  </div>
+  <div class="page">
+    <div class="hero">
+      <h1>Notification settings</h1>
+      <p>Choose exactly where submissions and status updates land in your own Slack, Linear, and Notion - once you've connected them on the <a href="/b/${encodeURIComponent(customerSlug)}/connect">Connect your tools</a> page.</p>
+    </div>
+
+    ${saved ? `<div class="saved-note">Settings saved.</div>` : ""}
+
+    <form method="POST" action="/api/customers/${encodeURIComponent(customerSlug)}/settings">
+      <div class="card">
+        <h2>Slack</h2>
+        <p class="hint">The channel name new submissions get posted to (e.g. <code>#feedback</code>). Leave blank to use your workspace's default channel.</p>
+        <div class="field">
+          <label>Channel name</label>
+          <input name="slackChannel" placeholder="#feedback" value="${escapeHtml(settings.slackChannel || "")}" />
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Linear</h2>
+        <p class="hint">The Team ID that tickets get created in when you mark an idea "Planned" or "In Progress". Find it in Linear under Settings &rarr; the team's page URL (<code>linear.app/.../team/&lt;slug&gt;/settings</code>) or the team's "Copy model UUID" action.</p>
+        <div class="field">
+          <label>Team ID</label>
+          <input name="linearTeamId" placeholder="e.g. 6a0351f8-9f72-49b7-a11a-753726597688" value="${escapeHtml(settings.linearTeamId || "")}" />
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Notion</h2>
+        <p class="hint">The Page ID of your changelog/roadmap page in Notion, where shipped ideas get archived. Find it in the page's share link - the 32-character ID at the end of the URL.</p>
+        <div class="field">
+          <label>Page ID</label>
+          <input name="notionPageId" placeholder="e.g. 409a930e131b8141b9b3e1f703a67f6f" value="${escapeHtml(settings.notionPageId || "")}" />
+        </div>
+      </div>
+
+      <button type="submit" class="btn-submit">Save settings</button>
+    </form>
   </div>
 </body>
 </html>`;
@@ -1010,6 +1107,10 @@ function boardPage(customerSlug) {
             <a class="sidebar-link" href="/b/${encodeURIComponent(customerSlug)}/connect">
               <svg class="icon" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.5-1.5"/></svg>
               Connect your tools
+            </a>
+            <a class="sidebar-link" href="/b/${encodeURIComponent(customerSlug)}/settings">
+              <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              Settings
             </a>
             ${
               customerSlug === "demo"
@@ -1570,6 +1671,7 @@ function adminPage(customerSlug) {
     <div class="logo-mark">R</div>
     <div class="brand">RequestHub <span class="org">/ ${escapeHtml(customerSlug)} triage</span></div>
     <a class="back" href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+    <a class="back" href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
     <a class="back" href="/b/${encodeURIComponent(customerSlug)}/billing">Billing</a>
     <a class="back" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
   </div>
@@ -2125,6 +2227,67 @@ export default {
       }
     }
 
+    const settingsMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/settings\/?$/);
+    if (request.method === "GET" && settingsMatch) {
+      const customerSlug = settingsMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: `/b/${encodeURIComponent(customerSlug)}/login` },
+        });
+      }
+      let settings = {};
+      try {
+        settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug });
+      } catch {}
+      return html(settingsPage(customerSlug, settings || {}, url.searchParams.get("saved") === "1"));
+    }
+
+    const settingsSaveMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/settings$/);
+    if (request.method === "POST" && settingsSaveMatch) {
+      const customerSlug = settingsSaveMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      const contentType = request.headers.get("content-type") || "";
+      let slackChannel = "";
+      let linearTeamId = "";
+      let notionPageId = "";
+      if (contentType.includes("application/json")) {
+        let body;
+        try {
+          body = await request.json();
+        } catch {
+          return json({ ok: false, error: "invalid JSON body" }, 400);
+        }
+        slackChannel = body.slackChannel || "";
+        linearTeamId = body.linearTeamId || "";
+        notionPageId = body.notionPageId || "";
+      } else {
+        const form = await request.formData();
+        slackChannel = form.get("slackChannel") || "";
+        linearTeamId = form.get("linearTeamId") || "";
+        notionPageId = form.get("notionPageId") || "";
+      }
+      try {
+        await callWorkflow(env, SET_CUSTOMER_SETTINGS_WORKFLOW_ID, {
+          customerSlug,
+          slackChannel,
+          linearTeamId,
+          notionPageId,
+        });
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+      if (!contentType.includes("application/json")) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: `/b/${encodeURIComponent(customerSlug)}/settings?saved=1` },
+        });
+      }
+      return json({ ok: true });
+    }
+
     if (request.method === "GET" && url.pathname === "/api/ideas") {
       const customerSlug = url.searchParams.get("customer") || "demo";
       const statusFilter = url.searchParams.get("status");
@@ -2151,14 +2314,27 @@ export default {
       } catch {
         return json({ ok: false, error: "invalid JSON body" }, 400);
       }
+      const submitCustomerSlug = body.customerSlug || "demo";
       try {
-        const data = await callWorkflow(env, SUBMIT_WORKFLOW_ID, {
-          customerSlug: body.customerSlug || "demo",
-          title: body.title,
-          description: body.description || "",
-          category: body.category || "Feature",
-          submitterEmail: body.submitterEmail || "",
-        });
+        const endOrgId = await getTenantOrgId(env, submitCustomerSlug);
+        let slackChannel;
+        try {
+          const settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug: submitCustomerSlug });
+          slackChannel = settings?.slackChannel || undefined;
+        } catch {}
+        const data = await callWorkflow(
+          env,
+          SUBMIT_WORKFLOW_ID,
+          {
+            customerSlug: submitCustomerSlug,
+            title: body.title,
+            description: body.description || "",
+            category: body.category || "Feature",
+            submitterEmail: body.submitterEmail || "",
+            ...(slackChannel ? { slackChannel } : {}),
+          },
+          endOrgId
+        );
         return json(data);
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
@@ -2241,12 +2417,22 @@ export default {
         return json({ ok: false, error: err.message }, 502);
       }
       try {
-        const data = await callWorkflow(env, UPDATE_STATUS_WORKFLOW_ID, {
-          ideaId: Number(statusMatch[1]),
-          status: body.status,
-          linearTeamId: body.linearTeamId || DEFAULT_LINEAR_TEAM_ID,
-          notionPageId: body.notionPageId || DEFAULT_NOTION_PAGE_ID,
-        });
+        const endOrgId = await getTenantOrgId(env, statusCustomerSlug);
+        let settings = {};
+        try {
+          settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug: statusCustomerSlug });
+        } catch {}
+        const data = await callWorkflow(
+          env,
+          UPDATE_STATUS_WORKFLOW_ID,
+          {
+            ideaId: Number(statusMatch[1]),
+            status: body.status,
+            linearTeamId: body.linearTeamId || settings?.linearTeamId || DEFAULT_LINEAR_TEAM_ID,
+            notionPageId: body.notionPageId || settings?.notionPageId || DEFAULT_NOTION_PAGE_ID,
+          },
+          endOrgId
+        );
         return json(data);
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
