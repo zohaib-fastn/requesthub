@@ -923,7 +923,8 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
           .join("")}
       </div>
 
-      <button type="submit" class="btn-submit">Save settings</button>
+      <button type="submit" class="btn-submit" id="settingsSaveBtn">Save settings</button>
+      <span id="settingsSaveNote" class="hint" style="margin-left: 10px;"></span>
     </form>
 
     <div class="card">
@@ -960,6 +961,66 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
   </div>
   <script>
     var customerSlug = ${JSON.stringify(customerSlug)};
+
+    (function () {
+      var form = document.getElementById('settingsForm');
+      var btn = document.getElementById('settingsSaveBtn');
+      var note = document.getElementById('settingsSaveNote');
+
+      function submitSettings() {
+        var formData = new FormData(form);
+        var statusLabels = {};
+        var linearStateIds = {};
+        formData.forEach(function (value, key) {
+          if (key.indexOf('statusLabel_') === 0) statusLabels[key.slice('statusLabel_'.length)] = value;
+          if (key.indexOf('linearStateId_') === 0) linearStateIds[key.slice('linearStateId_'.length)] = value;
+        });
+        var body = {
+          slackChannel: formData.get('slackChannel') || '',
+          linearTeamId: formData.get('linearTeamId') || '',
+          notionPageId: formData.get('notionPageId') || '',
+          statusLabels: statusLabels,
+          linearStateIds: linearStateIds,
+        };
+
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+        note.textContent = '';
+        note.style.color = '';
+
+        fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/settings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+          .then(function (r) { return r.json().catch(function () { return {}; }); })
+          .then(function (d) {
+            btn.disabled = false;
+            btn.textContent = 'Save settings';
+            if (d && d.ok) {
+              note.textContent = 'Settings saved.';
+              note.style.color = 'var(--good)';
+            } else {
+              note.textContent = (d && d.error) || 'Could not save - try again.';
+              note.style.color = 'var(--bad)';
+            }
+          })
+          .catch(function () {
+            // A network/transport failure (e.g. a dropped QUIC connection) lands
+            // here - keep the form and everything the customer typed intact and
+            // let them just retry, instead of a full-page browser error wiping it.
+            btn.disabled = false;
+            btn.textContent = 'Save settings';
+            note.textContent = 'Network error - your changes were not lost, click Save settings to retry.';
+            note.style.color = 'var(--bad)';
+          });
+      }
+
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        submitSettings();
+      });
+    })();
 
     document.getElementById('copyEmbedBtn').addEventListener('click', function () {
       var btn = this;
