@@ -2201,6 +2201,7 @@ function adminPage(customerSlug, isOwner) {
     <nav class="nav-right">
       ${isOwner ? `<a class="owner-link" href="/owner">&larr; Owner console</a>` : ""}
       <a href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+      <a href="/api/customers/${encodeURIComponent(customerSlug)}/export.csv">Export CSV</a>
       <a href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
       <a href="/b/${encodeURIComponent(customerSlug)}/billing">Billing</a>
       <a class="logout" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
@@ -3563,6 +3564,30 @@ export default {
           body: body.body,
         });
         return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
+    const exportMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/export\.csv$/);
+    if (request.method === "GET" && exportMatch) {
+      const customerSlug = exportMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      try {
+        const data = await callWorkflow(env, LIST_WORKFLOW_ID, { customerSlug });
+        const ideas = data?.ideas || [];
+        const csvEscape = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+        const header = ["id", "title", "description", "category", "status", "votes", "submitter_email", "linear_issue_url", "created_at"];
+        const rows = ideas.map((i) => header.map((k) => csvEscape(i[k])).join(","));
+        const csv = [header.join(","), ...rows].join("\r\n");
+        return new Response(csv, {
+          headers: {
+            "content-type": "text/csv; charset=utf-8",
+            "content-disposition": `attachment; filename="${customerSlug}-ideas.csv"`,
+          },
+        });
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
       }
