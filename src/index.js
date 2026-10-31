@@ -697,6 +697,10 @@ function boardPage(customerSlug) {
       <div class="sidebar">
         <button class="btn-add" id="openFormBtn">+ Add feedback</button>
         <div class="nav-list" id="categoryNav"></div>
+        <a class="nav-list" style="display:flex;align-items:center;gap:9px;padding:9px 10px;color:var(--text-muted);text-decoration:none;font-size:13.5px;font-weight:500;" href="/b/${encodeURIComponent(customerSlug)}/roadmap">
+          <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/></svg>
+          Roadmap
+        </a>
         <a class="nav-list" style="display:flex;align-items:center;gap:9px;padding:9px 10px;color:var(--text-muted);text-decoration:none;font-size:13.5px;font-weight:500;" href="/b/${encodeURIComponent(customerSlug)}/admin">
           <svg class="icon" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
           Triage dashboard
@@ -995,6 +999,127 @@ function boardPage(customerSlug) {
     load();
   </script>
   ${["acme-saas", "demo"].includes(customerSlug) ? `<script src="/embed.js" data-customer="${escapeHtml(customerSlug)}"></script>` : ""}
+</body>
+</html>`;
+}
+
+function roadmapPage(customerSlug) {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Roadmap - RequestHub</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+  <style>
+    :root {
+      --bg: #0b0b10; --surface: #16151d; --surface-2: #1d1c26; --surface-3: #252430;
+      --border: #2a2935; --text: #f3f2f7; --text-muted: #9492a3; --text-faint: #65636f;
+      --accent: #6d5ef8; --accent-tint: rgba(109, 94, 248, 0.16);
+      --good: #22c58b; --good-tint: rgba(34, 197, 139, 0.14);
+      --warn: #e8a53d; --warn-tint: rgba(232, 165, 61, 0.14);
+      --bad: #f06a6a; --bad-tint: rgba(240, 106, 106, 0.14);
+      --info: #4ea8f0; --info-tint: rgba(78, 168, 240, 0.14);
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: "Inter", -apple-system, sans-serif; font-size: 14px; line-height: 1.5; }
+    .topbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+    .brand { font-weight: 700; font-size: 15px; }
+    .brand .org { color: var(--text-faint); font-weight: 500; }
+    .back { margin-left: auto; color: var(--text-muted); font-size: 13px; text-decoration: none; }
+    .back:hover { color: var(--text); }
+
+    .page { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .hero { margin-bottom: 20px; }
+    .hero h1 { font-size: 20px; margin: 0 0 4px; }
+    .hero p { margin: 0; color: var(--text-muted); font-size: 13.5px; }
+
+    .board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; align-items: start; }
+    @media (max-width: 900px) { .board { grid-template-columns: 1fr; } }
+
+    .column-header { display: flex; align-items: center; gap: 8px; padding: 0 2px 10px; }
+    .column-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .column-dot.under_review { background: var(--text-faint); }
+    .column-dot.planned { background: var(--info); }
+    .column-dot.in_progress { background: var(--warn); }
+    .column-dot.shipped { background: var(--good); }
+    .column-title { font-weight: 600; font-size: 13.5px; }
+    .column-count { margin-left: auto; color: var(--text-faint); font-size: 12px; font-family: "IBM Plex Mono", monospace; }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 13px 14px; margin-bottom: 8px; }
+    .card-title { font-weight: 600; font-size: 13.5px; }
+    .card-desc { color: var(--text-muted); font-size: 12px; margin-top: 4px; line-height: 1.4; }
+    .card-meta { margin-top: 10px; display: flex; align-items: center; gap: 6px; }
+    .chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-weight: 600; font-size: 10.5px; }
+    .chip.cat-Feature { background: var(--accent-tint); color: var(--accent); }
+    .chip.cat-Bug { background: var(--bad-tint); color: var(--bad); }
+    .chip.cat-Feedback { background: var(--good-tint); color: var(--good); }
+    .card-votes { margin-left: auto; color: var(--text-faint); font-size: 11.5px; font-family: "IBM Plex Mono", monospace; }
+    .empty-col { color: var(--text-faint); font-size: 12px; padding: 10px 2px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo-mark">R</div>
+    <div class="brand">RequestHub <span class="org">/ ${escapeHtml(customerSlug)} roadmap</span></div>
+    <a class="back" href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+  </div>
+
+  <div class="page">
+    <div class="hero">
+      <h1>Roadmap</h1>
+      <p>What's being considered, what's next, and what's already shipped.</p>
+    </div>
+    <div class="board" id="board"></div>
+  </div>
+
+  <script>
+    var customerSlug = ${JSON.stringify(customerSlug)};
+    var COLUMNS = [
+      { key: "under_review", label: "Under Review" },
+      { key: "planned", label: "Planned" },
+      { key: "in_progress", label: "In Progress" },
+      { key: "shipped", label: "Shipped" },
+    ];
+
+    function escapeHtml(s) {
+      var d = document.createElement('div');
+      d.innerText = s || '';
+      return d.innerHTML;
+    }
+
+    function render(ideas) {
+      var board = document.getElementById('board');
+      board.innerHTML = COLUMNS.map(function (col) {
+        var items = ideas.filter(function (i) { return i.status === col.key; })
+          .sort(function (a, b) { return b.votes - a.votes; });
+        var cards = items.length
+          ? items.map(function (i) {
+              return '<div class="card">' +
+                '<div class="card-title">' + escapeHtml(i.title) + '</div>' +
+                (i.description ? '<div class="card-desc">' + escapeHtml(i.description) + '</div>' : '') +
+                '<div class="card-meta">' +
+                '<span class="chip cat-' + i.category + '">' + i.category + '</span>' +
+                '<span class="card-votes">' + i.votes + ' votes</span>' +
+                '</div>' +
+                '</div>';
+            }).join('')
+          : '<div class="empty-col">Nothing here yet.</div>';
+        return '<div class="column">' +
+          '<div class="column-header"><span class="column-dot ' + col.key + '"></span>' +
+          '<span class="column-title">' + col.label + '</span>' +
+          '<span class="column-count">' + items.length + '</span></div>' +
+          cards +
+          '</div>';
+      }).join('');
+    }
+
+    fetch('/api/ideas?customer=' + encodeURIComponent(customerSlug))
+      .then(function (r) { return r.json(); })
+      .then(function (d) { render(d.ideas || []); });
+  </script>
 </body>
 </html>`;
 }
@@ -1548,6 +1673,11 @@ export default {
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
       }
+    }
+
+    const roadmapMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/roadmap\/?$/);
+    if (request.method === "GET" && roadmapMatch) {
+      return html(roadmapPage(roadmapMatch[1]));
     }
 
     const adminMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/admin\/?$/);
