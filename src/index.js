@@ -1140,6 +1140,15 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
         </div>
       </div>
 
+      <div class="card">
+        <h2>Automation</h2>
+        <p class="hint">Auto-promote an idea from "Under Review" straight to "Planned" - same as doing it by hand (Linear ticket, webhooks, everything) - once it reaches this many votes. Leave blank to turn off; off by default.</p>
+        <div class="field">
+          <label>Auto-promote at N votes</label>
+          <input type="number" min="1" step="1" name="autoPromoteVoteThreshold" value="${settings.autoPromoteVoteThreshold ? escapeHtml(String(settings.autoPromoteVoteThreshold)) : ""}" placeholder="disabled" />
+        </div>
+      </div>
+
       <button type="submit" class="btn-submit" id="settingsSaveBtn">Save settings</button>
       <span id="settingsSaveNote" class="hint" style="margin-left: 10px;"></span>
     </form>
@@ -1239,6 +1248,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
           linearStateIds: linearStateIds,
           categories: categories,
           hiddenRoadmapStatuses: hiddenRoadmapStatuses,
+          autoPromoteVoteThreshold: formData.get('autoPromoteVoteThreshold') || '',
         };
 
         btn.disabled = true;
@@ -4819,6 +4829,7 @@ export default {
       let linearStateIds = {};
       let categories = [];
       let hiddenRoadmapStatuses = [];
+      let autoPromoteVoteThreshold = null;
       if (contentType.includes("application/json")) {
         let body;
         try {
@@ -4833,6 +4844,7 @@ export default {
         linearStateIds = body.linearStateIds || {};
         categories = Array.isArray(body.categories) ? body.categories : [];
         hiddenRoadmapStatuses = Array.isArray(body.hiddenRoadmapStatuses) ? body.hiddenRoadmapStatuses : [];
+        autoPromoteVoteThreshold = body.autoPromoteVoteThreshold || null;
       } else {
         const form = await request.formData();
         slackChannel = form.get("slackChannel") || "";
@@ -4854,6 +4866,7 @@ export default {
         hiddenRoadmapStatuses = ["under_review", "planned", "in_progress", "shipped", "declined"].filter(
           (key) => form.get(`hideFromRoadmap_${key}`)
         );
+        autoPromoteVoteThreshold = form.get("autoPromoteVoteThreshold") || null;
       }
       try {
         await callWorkflow(env, SET_CUSTOMER_SETTINGS_WORKFLOW_ID, {
@@ -4865,6 +4878,7 @@ export default {
           linearStateIds,
           categories,
           hiddenRoadmapStatuses,
+          autoPromoteVoteThreshold,
         });
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
@@ -5266,6 +5280,46 @@ export default {
           direction: voteBody.direction === "down" ? "down" : "up",
           voterKey,
         });
+        // Single, narrow automation rule (deliberately not a configurable
+        // rule builder): an idea still "Under Review" that crosses the
+        // customer's own opt-in vote threshold auto-promotes to Planned via
+        // the exact same path a human triage action would take - same
+        // Linear ticket creation, same webhook. Off by default (no
+        // threshold configured); never fires twice, since the idea is no
+        // longer "under_review" after the first promotion.
+        if (
+          data?.ok &&
+          voteBody.direction !== "down" &&
+          data.idea?.status === "under_review" &&
+          !data.idea?.merged_into_id &&
+          data.idea?.customer_slug
+        ) {
+          try {
+            const voteCustomerSlug = data.idea.customer_slug;
+            const settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug: voteCustomerSlug });
+            if (settings?.autoPromoteVoteThreshold && data.idea.votes >= settings.autoPromoteVoteThreshold) {
+              const endOrgId = await getTenantOrgId(env, voteCustomerSlug);
+              const promoted = await callWorkflow(
+                env,
+                UPDATE_STATUS_WORKFLOW_ID,
+                {
+                  ideaId: Number(voteMatch[1]),
+                  status: "planned",
+                  linearTeamId: settings?.linearTeamId || DEFAULT_LINEAR_TEAM_ID,
+                  notionPageId: settings?.notionPageId || DEFAULT_NOTION_PAGE_ID,
+                  linearStateIds: settings?.linearStateIds || {},
+                  baseUrl: url.origin,
+                },
+                endOrgId
+              );
+              if (promoted?.idea) {
+                data.idea = promoted.idea;
+                data.autoPromoted = true;
+                deliverWebhooks(env, ctx, voteCustomerSlug, "idea.status_changed", promoted.idea);
+              }
+            }
+          } catch {}
+        }
         return json(data, 200, setCookie ? { "set-cookie": setCookie } : {});
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
