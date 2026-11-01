@@ -292,6 +292,43 @@ function deliverWebhooks(env, ctx, customerSlug, eventType, payload) {
   if (ctx && ctx.waitUntil) ctx.waitUntil(task);
 }
 
+// Single, narrow automation rule (deliberately not a configurable rule
+// builder): an idea still "Under Review" that crosses the customer's own
+// opt-in vote threshold auto-promotes to Planned via the exact same path a
+// human triage action would take - same Linear ticket creation, same
+// webhook. Off by default (no threshold configured); never fires twice,
+// since the idea is no longer "under_review" after the first promotion.
+// Shared by both callers whose action can push an idea over the threshold -
+// a direct upvote, and a merge that sums the duplicate's votes onto the
+// canonical idea - so the check can't drift between the two.
+async function maybeAutoPromote(env, ctx, baseUrl, idea) {
+  if (!idea || idea.status !== "under_review" || idea.merged_into_id || !idea.customer_slug) return idea;
+  try {
+    const customerSlug = idea.customer_slug;
+    const settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug });
+    if (!settings?.autoPromoteVoteThreshold || idea.votes < settings.autoPromoteVoteThreshold) return idea;
+    const endOrgId = await getTenantOrgId(env, customerSlug);
+    const promoted = await callWorkflow(
+      env,
+      UPDATE_STATUS_WORKFLOW_ID,
+      {
+        ideaId: idea.id,
+        status: "planned",
+        linearTeamId: settings?.linearTeamId || DEFAULT_LINEAR_TEAM_ID,
+        notionPageId: settings?.notionPageId || DEFAULT_NOTION_PAGE_ID,
+        linearStateIds: settings?.linearStateIds || {},
+        baseUrl,
+      },
+      endOrgId
+    );
+    if (promoted?.idea) {
+      deliverWebhooks(env, ctx, customerSlug, "idea.status_changed", promoted.idea);
+      return promoted.idea;
+    }
+  } catch {}
+  return idea;
+}
+
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({
     "&": "&amp;",
@@ -5280,45 +5317,12 @@ export default {
           direction: voteBody.direction === "down" ? "down" : "up",
           voterKey,
         });
-        // Single, narrow automation rule (deliberately not a configurable
-        // rule builder): an idea still "Under Review" that crosses the
-        // customer's own opt-in vote threshold auto-promotes to Planned via
-        // the exact same path a human triage action would take - same
-        // Linear ticket creation, same webhook. Off by default (no
-        // threshold configured); never fires twice, since the idea is no
-        // longer "under_review" after the first promotion.
-        if (
-          data?.ok &&
-          voteBody.direction !== "down" &&
-          data.idea?.status === "under_review" &&
-          !data.idea?.merged_into_id &&
-          data.idea?.customer_slug
-        ) {
-          try {
-            const voteCustomerSlug = data.idea.customer_slug;
-            const settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug: voteCustomerSlug });
-            if (settings?.autoPromoteVoteThreshold && data.idea.votes >= settings.autoPromoteVoteThreshold) {
-              const endOrgId = await getTenantOrgId(env, voteCustomerSlug);
-              const promoted = await callWorkflow(
-                env,
-                UPDATE_STATUS_WORKFLOW_ID,
-                {
-                  ideaId: Number(voteMatch[1]),
-                  status: "planned",
-                  linearTeamId: settings?.linearTeamId || DEFAULT_LINEAR_TEAM_ID,
-                  notionPageId: settings?.notionPageId || DEFAULT_NOTION_PAGE_ID,
-                  linearStateIds: settings?.linearStateIds || {},
-                  baseUrl: url.origin,
-                },
-                endOrgId
-              );
-              if (promoted?.idea) {
-                data.idea = promoted.idea;
-                data.autoPromoted = true;
-                deliverWebhooks(env, ctx, voteCustomerSlug, "idea.status_changed", promoted.idea);
-              }
-            }
-          } catch {}
+        if (data?.ok && voteBody.direction !== "down" && data.idea) {
+          const promotedIdea = await maybeAutoPromote(env, ctx, url.origin, data.idea);
+          if (promotedIdea !== data.idea) {
+            data.idea = promotedIdea;
+            data.autoPromoted = true;
+          }
         }
         return json(data, 200, setCookie ? { "set-cookie": setCookie } : {});
       } catch (err) {
@@ -5416,7 +5420,7 @@ export default {
         const data = await callWorkflow(env, LIST_WORKFLOW_ID, { customerSlug });
         const ideas = data?.ideas || [];
         const csvEscape = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
-        const header = ["id", "title", "description", "category", "status", "votes", "tags", "submitter_email", "linear_issue_url", "created_at"];
+        const header = ["id", "title", "description", "category", "status", "votes", "tags", "is_pinned", "submitter_email", "linear_issue_url", "created_at"];
         const rows = ideas.map((i) => header.map((k) => csvEscape(i[k])).join(","));
         const csv = [header.join(","), ...rows].join("\r\n");
         return new Response(csv, {
@@ -5610,6 +5614,17 @@ export default {
             duplicate: data.duplicate,
             canonical: data.canonical,
           });
+          // The canonical idea's votes just jumped by the duplicate's count
+          // in one step, not one vote at a time - without this, an idea that
+          // the merge itself pushes over the customer's threshold would sit
+          // there until some future human vote happened to check it again.
+          if (data.canonical) {
+            const promotedCanonical = await maybeAutoPromote(env, ctx, url.origin, data.canonical);
+            if (promotedCanonical !== data.canonical) {
+              data.canonical = promotedCanonical;
+              data.canonicalAutoPromoted = true;
+            }
+          }
         }
         return json(data);
       } catch (err) {
