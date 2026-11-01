@@ -2643,6 +2643,7 @@ function changelogPage(customerSlug, isOwner) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Changelog - ${escapeHtml(customerSlug)} - RequestHub</title>
+  <link rel="alternate" type="application/rss+xml" title="${escapeHtml(customerSlug)} changelog" href="/b/${encodeURIComponent(customerSlug)}/changelog.rss" />
   ${DESIGN_FONT_LINK}
   <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
@@ -2691,7 +2692,7 @@ function changelogPage(customerSlug, isOwner) {
 
   <div class="page">
     <h1 class="page-title">What's new</h1>
-    <p class="page-sub">Everything we've shipped, most recent first.</p>
+    <p class="page-sub">Everything we've shipped, most recent first. <a href="/b/${encodeURIComponent(customerSlug)}/changelog.rss" style="color:var(--accent);">Subscribe via RSS</a></p>
     <div id="list"><div class="empty">Loading...</div></div>
   </div>
 
@@ -3861,6 +3862,47 @@ export default {
         return json(data);
       } catch (err) {
         return json({ ok: false, error: err.message, items: [] }, 502);
+      }
+    }
+
+    const changelogRssMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/changelog\.rss$/);
+    if (request.method === "GET" && changelogRssMatch) {
+      const customerSlug = changelogRssMatch[1];
+      try {
+        const data = await callWorkflow(env, LIST_CHANGELOG_WORKFLOW_ID, { customerSlug });
+        const items = data?.items || [];
+        const siteUrl = `${url.origin}/b/${encodeURIComponent(customerSlug)}/changelog`;
+        const xmlEscape = (s) =>
+          String(s ?? "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&apos;");
+        const rssItems = items
+          .map(
+            (it) => `<item>
+      <title>${xmlEscape(it.title)}</title>
+      <link>${xmlEscape(siteUrl)}</link>
+      <guid isPermaLink="false">${customerSlug}-changelog-${it.id}</guid>
+      <pubDate>${new Date(it.shipped_at).toUTCString()}</pubDate>
+      <category>${xmlEscape(it.category)}</category>
+      <description>${xmlEscape(it.description || "")}</description>
+    </item>`
+          )
+          .join("\n    ");
+        const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>${xmlEscape(customerSlug)} changelog</title>
+    <link>${xmlEscape(siteUrl)}</link>
+    <description>What's new on ${xmlEscape(customerSlug)}'s RequestHub board</description>
+    ${rssItems}
+  </channel>
+</rss>`;
+        return new Response(xml, { headers: { "content-type": "application/rss+xml; charset=utf-8" } });
+      } catch (err) {
+        return new Response("Failed to build feed: " + err.message, { status: 502 });
       }
     }
 

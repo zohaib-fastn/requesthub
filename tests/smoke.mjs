@@ -58,6 +58,14 @@ async function run() {
     assert(body.ok === true, "changelog call failed: " + JSON.stringify(body));
     assert(Array.isArray(body.items), "items was not an array");
   });
+  await check("changelog RSS feed is valid XML", async () => {
+    const r = await fetch(BASE_URL + "/b/" + CUSTOMER + "/changelog.rss");
+    const text = await r.text();
+    assert(r.status === 200, "status " + r.status);
+    assert((r.headers.get("content-type") || "").includes("rss+xml"), "wrong content-type: " + r.headers.get("content-type"));
+    assert(text.startsWith("<?xml"), "response did not start with an XML declaration");
+    assert(text.includes("<rss version=\"2.0\">"), "missing rss root element");
+  });
   await check("embed.js", async () => {
     const r = await fetch(BASE_URL + "/embed.js");
     assert(r.status === 200, "status " + r.status);
