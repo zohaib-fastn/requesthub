@@ -2103,7 +2103,7 @@ function boardPage(customerSlug, isOwner) {
           (i.description ? '<div class="idea-desc">' + escapeHtml(i.description) + '</div>' : '') +
           '<div class="meta">' +
           '<span class="chip" style="background:' + categoryColor(i.category).bg + ';color:' + categoryColor(i.category).fg + '">' + (ICONS[i.category] || '') + escapeHtml(i.category) + '</span>' +
-          '<span class="chip status-chip ' + i.status + '">' + (statusLabels[i.status] || i.status.replace('_', ' ')) + '</span>' +
+          '<span class="chip status-chip ' + i.status + '">' + escapeHtml(statusLabels[i.status] || i.status.replace('_', ' ')) + '</span>' +
           (i.tags || []).map(function (t) { return '<span class="tag-chip">#' + escapeHtml(t) + '</span>'; }).join('') +
           '<span class="meta-right">' +
           '<button class="comment-count" data-idea-id="' + i.id + '">' + ICONS.comment + '<span class="cc-num">' + (i.comment_count ? i.comment_count + ' Comment' + (i.comment_count === 1 ? '' : 's') : 'Comments') + '</span></button>' +
@@ -2539,7 +2539,7 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
         (idea.description ? '<div class="idea-desc">' + escapeHtml(idea.description) + '</div>' : '') +
         '<div class="idea-meta">' +
         '<span class="chip" style="background:' + categoryColor(idea.category).bg + ';color:' + categoryColor(idea.category).fg + '">' + escapeHtml(idea.category) + '</span>' +
-        '<span class="chip status-chip ' + idea.status + '">' + (statusLabels[idea.status] || idea.status) + '</span>' +
+        '<span class="chip status-chip ' + idea.status + '">' + escapeHtml(statusLabels[idea.status] || idea.status) + '</span>' +
         (idea.tags || []).map(function (t) { return '<span class="tag-chip">#' + escapeHtml(t) + '</span>'; }).join('') +
         badges.join('') +
         '<span style="color:var(--text-faint);font-size:11px;margin-left:auto;">' + date + '</span>' +
@@ -2969,7 +2969,7 @@ function roadmapPage(customerSlug, isOwner) {
           : '<div class="empty-col">Nothing here yet.</div>';
         return '<div class="column">' +
           '<div class="column-header"><span class="column-dot ' + col.key + '"></span>' +
-          '<span class="column-title">' + col.label + '</span>' +
+          '<span class="column-title">' + escapeHtml(col.label) + '</span>' +
           '<span class="column-count">' + items.length + '</span></div>' +
           cards +
           '</div>';
@@ -3407,7 +3407,7 @@ function adminPage(customerSlug, isOwner) {
           : '<div class="empty-col">Nothing here.</div>';
         return '<div class="column" data-status="' + status + '">' +
           '<div class="column-header"><span class="column-dot ' + status + '"></span>' +
-          '<span class="column-title">' + STATUS_LABELS[status] + '</span>' +
+          '<span class="column-title">' + escapeHtml(STATUS_LABELS[status]) + '</span>' +
           '<span class="column-count">' + items.length + '</span></div>' +
           cards +
           '</div>';
@@ -3887,7 +3887,7 @@ function changelogWidgetPage(customerSlug, color) {
   </div>
 
   <script>
-    var customerSlug = ${JSON.stringify(customerSlug)};
+    var customerSlug = ${JSON.stringify(customerSlug).replace(/</g, "\\u003c")};
     var SEEN_KEY = 'requesthub_changelog_seen_' + customerSlug;
     var latestShippedAt = 0;
 
@@ -4043,7 +4043,7 @@ function widgetPage(customerSlug, color) {
   </div>
 
   <script>
-    var customerSlug = ${JSON.stringify(customerSlug)};
+    var customerSlug = ${JSON.stringify(customerSlug).replace(/</g, "\\u003c")};
 
     function post(type) {
       window.parent.postMessage({ source: 'requesthub-widget', type: type }, '*');

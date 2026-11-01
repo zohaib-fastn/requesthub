@@ -84,6 +84,19 @@ async function run() {
     const text = await r.text();
     assert(text.includes("What's new"), "changelog-widget.html missing expected content");
   });
+  const xssPayload = "</script><script>window.__smoke_xsspoc=1</script>";
+  await check("widget.html does not let ?customer= break out of its inline <script> tag (reflected-XSS regression)", async () => {
+    const r = await fetch(BASE_URL + "/widget.html?customer=" + encodeURIComponent(xssPayload));
+    assert(r.status === 200, "status " + r.status);
+    const text = await r.text();
+    assert(!text.includes(xssPayload), "raw payload (with a literal </script> breakout) appeared unescaped in the response");
+  });
+  await check("changelog-widget.html does not let ?customer= break out of its inline <script> tag (reflected-XSS regression)", async () => {
+    const r = await fetch(BASE_URL + "/changelog-widget.html?customer=" + encodeURIComponent(xssPayload));
+    assert(r.status === 200, "status " + r.status);
+    const text = await r.text();
+    assert(!text.includes(xssPayload), "raw payload (with a literal </script> breakout) appeared unescaped in the response");
+  });
 
   console.log("\nCore read/write loop (public, no auth):");
   let ideaId;
