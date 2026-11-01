@@ -1106,6 +1106,16 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
     </div>
 
     <div class="card">
+      <h2>Embed your changelog</h2>
+      <p class="hint">A small "What's new" badge for your site - shows a red dot when there's something new, and opens a popover listing your last 5 shipped items, each linking back to your full changelog.</p>
+      <div class="embed-code">
+        <code id="changelogEmbedSnippet">${escapeHtml(`<script src="${baseUrl}/changelog-embed.js" data-customer="${customerSlug}"><\/script>`)}</code>
+        <button type="button" class="btn-copy" id="copyChangelogEmbedBtn">Copy</button>
+      </div>
+      <p class="hint" style="margin-top: 10px;">Same <code style="background:none;border:none;padding:0;display:inline;">data-color</code> / <code style="background:none;border:none;padding:0;display:inline;">data-position</code> options as the feedback widget above (defaults to bottom-left so the two don't collide if you embed both).</p>
+    </div>
+
+    <div class="card">
       <h2>Team</h2>
       <p class="hint">Invite teammates to sign in with their own email instead of sharing the admin password. Anyone invited gets full admin access, same as the shared password.</p>
       <div id="teamList"></div>
@@ -1205,6 +1215,16 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
     document.getElementById('copyEmbedBtn').addEventListener('click', function () {
       var btn = this;
       var text = document.getElementById('embedSnippet').textContent;
+      navigator.clipboard.writeText(text).then(function () {
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(function () { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+      });
+    });
+
+    document.getElementById('copyChangelogEmbedBtn').addEventListener('click', function () {
+      var btn = this;
+      var text = document.getElementById('changelogEmbedSnippet').textContent;
       navigator.clipboard.writeText(text).then(function () {
         btn.textContent = 'Copied!';
         btn.classList.add('copied');
@@ -3358,6 +3378,166 @@ function embedJs() {
 })();`;
 }
 
+function changelogEmbedJs() {
+  return `(function () {
+  var cs = document.currentScript;
+  if (!cs) return;
+  var origin = new URL(cs.src).origin;
+  var customer = cs.getAttribute('data-customer') || 'demo';
+  var color = cs.getAttribute('data-color') || '';
+  var position = cs.getAttribute('data-position') || 'bottom-left';
+  var EXPANDED = { width: '340px', height: 'min(480px, calc(100vh - 40px))' };
+  var COLLAPSED = { width: '48px', height: '48px' };
+  var POSITIONS = {
+    'bottom-right': { bottom: '20px', right: '20px' },
+    'bottom-left': { bottom: '20px', left: '20px' },
+    'top-right': { top: '20px', right: '20px' },
+    'top-left': { top: '20px', left: '20px' },
+  };
+  var corner = POSITIONS[position] || POSITIONS['bottom-left'];
+  var cornerCss = Object.keys(corner).map(function (k) { return k + ':' + corner[k]; });
+
+  var widgetUrl = origin + '/changelog-widget.html?customer=' + encodeURIComponent(customer);
+  if (color) widgetUrl += '&color=' + encodeURIComponent(color);
+
+  var iframe = document.createElement('iframe');
+  iframe.src = widgetUrl;
+  iframe.title = "What's new";
+  iframe.style.cssText = ['position:fixed']
+    .concat(cornerCss)
+    .concat([
+      'border:none', 'background:transparent', 'z-index:2147483000',
+      'width:' + COLLAPSED.width, 'height:' + COLLAPSED.height,
+      'transition:width .15s ease,height .15s ease', 'color-scheme:normal',
+    ])
+    .join(';');
+  iframe.setAttribute('allowtransparency', 'true');
+  document.body.appendChild(iframe);
+
+  window.addEventListener('message', function (e) {
+    if (!e.data || e.data.source !== 'requesthub-changelog-widget') return;
+    if (e.data.type === 'open') {
+      iframe.style.width = EXPANDED.width;
+      iframe.style.height = EXPANDED.height;
+    } else if (e.data.type === 'close') {
+      iframe.style.width = COLLAPSED.width;
+      iframe.style.height = COLLAPSED.height;
+    }
+  });
+})();`;
+}
+
+function changelogWidgetPage(customerSlug, color) {
+  const accent = color || "#6d5ef8";
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: transparent; font-family: -apple-system, sans-serif; overflow: hidden; }
+    .launcher {
+      width: 48px; height: 48px; border-radius: 50%; background: ${accent}; border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 20px rgba(0,0,0,.25); position: relative;
+    }
+    .launcher:hover { filter: brightness(0.93); }
+    .launcher svg { width: 20px; height: 20px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .launcher .dot { position: absolute; top: 4px; right: 4px; width: 9px; height: 9px; border-radius: 50%; background: #f04438; border: 2px solid #fff; display: none; }
+    .launcher.unread .dot { display: block; }
+    .panel {
+      display: none; flex-direction: column; height: 100%; background: #16151d; color: #f3f2f7;
+      border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,.4); border: 1px solid #2a2935; overflow: hidden;
+    }
+    body.open .launcher { display: none; }
+    body.open .panel { display: flex; }
+    .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #2a2935; }
+    .panel-header h1 { font-size: 14px; margin: 0; font-weight: 700; }
+    .panel-close { background: none; border: none; color: #9492a3; cursor: pointer; font-size: 18px; line-height: 1; padding: 2px; }
+    .panel-close:hover { color: #fff; }
+    .panel-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+    .entry { padding: 0 0 14px; margin-bottom: 14px; border-bottom: 1px solid #242330; }
+    .entry:last-child { border-bottom: none; margin-bottom: 0; }
+    .entry-date { color: #716f80; font-size: 10.5px; margin-bottom: 4px; }
+    .entry-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+    .entry-desc { color: #a9a7b5; font-size: 12px; line-height: 1.5; }
+    .empty { color: #716f80; font-size: 12.5px; text-align: center; padding: 20px 0; }
+    .panel-footer { padding: 10px 16px; border-top: 1px solid #2a2935; text-align: center; }
+    .panel-footer a { color: #9492a3; font-size: 11.5px; text-decoration: none; }
+    .panel-footer a:hover { color: #fff; }
+  </style>
+</head>
+<body>
+  <button class="launcher" id="launcher" aria-label="What's new">
+    <span class="dot"></span>
+    <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+  </button>
+  <div class="panel">
+    <div class="panel-header">
+      <h1>What's new</h1>
+      <button class="panel-close" id="closeBtn" aria-label="Close">&times;</button>
+    </div>
+    <div class="panel-body" id="panelBody"><div class="empty">Loading...</div></div>
+    <div class="panel-footer"><a href="/b/${encodeURIComponent(customerSlug)}/changelog" target="_blank" rel="noopener">View full changelog &#8599;</a></div>
+  </div>
+
+  <script>
+    var customerSlug = ${JSON.stringify(customerSlug)};
+    var SEEN_KEY = 'requesthub_changelog_seen_' + customerSlug;
+    var latestShippedAt = 0;
+
+    function escapeHtml(s) {
+      var d = document.createElement('div');
+      d.innerText = s || '';
+      return d.innerHTML;
+    }
+
+    function post(type) {
+      window.parent.postMessage({ source: 'requesthub-changelog-widget', type: type }, '*');
+    }
+
+    document.getElementById('launcher').addEventListener('click', function () {
+      document.body.classList.add('open');
+      document.getElementById('launcher').classList.remove('unread');
+      try { localStorage.setItem(SEEN_KEY, String(latestShippedAt)); } catch {}
+      post('open');
+    });
+    document.getElementById('closeBtn').addEventListener('click', function () {
+      document.body.classList.remove('open');
+      post('close');
+    });
+
+    fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/changelog')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var items = (d.items || []).slice(0, 5);
+        var body = document.getElementById('panelBody');
+        if (!items.length) {
+          body.innerHTML = '<div class="empty">Nothing shipped yet - check back soon.</div>';
+          return;
+        }
+        body.innerHTML = items.map(function (it) {
+          var date = it.shipped_at ? new Date(it.shipped_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+          return '<div class="entry">' +
+            '<div class="entry-date">' + date + '</div>' +
+            '<div class="entry-title">' + escapeHtml(it.title) + '</div>' +
+            (it.description ? '<div class="entry-desc">' + escapeHtml(it.description) + '</div>' : '') +
+            '</div>';
+        }).join('');
+
+        // Unread means "the newest item shipped after the visitor last opened
+        // this widget" - the stored seen value is the shipped_at of whatever
+        // was newest at last open, not a wall-clock timestamp, so a brand new
+        // visitor (no stored value) correctly sees everything as unread.
+        latestShippedAt = items[0].shipped_at ? new Date(items[0].shipped_at).getTime() : 0;
+        var seen = 0;
+        try { seen = Number(localStorage.getItem(SEEN_KEY) || 0); } catch {}
+        if (latestShippedAt > seen) document.getElementById('launcher').classList.add('unread');
+      });
+  </script>
+</body>
+</html>`;
+}
+
 function widgetPage(customerSlug, color) {
   const accent = color || "#6d5ef8";
   return `<!doctype html>
@@ -3826,6 +4006,19 @@ export default {
       const rawColor = url.searchParams.get("color") || "";
       const color = /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(rawColor) ? rawColor : null;
       return html(widgetPage(customerSlug, color));
+    }
+
+    if (request.method === "GET" && url.pathname === "/changelog-embed.js") {
+      return new Response(changelogEmbedJs(), {
+        headers: { "content-type": "application/javascript; charset=utf-8", "cache-control": "public, max-age=300" },
+      });
+    }
+
+    if (request.method === "GET" && url.pathname === "/changelog-widget.html") {
+      const customerSlug = url.searchParams.get("customer") || "demo";
+      const rawColor = url.searchParams.get("color") || "";
+      const color = /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(rawColor) ? rawColor : null;
+      return html(changelogWidgetPage(customerSlug, color));
     }
 
     if (request.method === "GET" && url.pathname === "/signup") {

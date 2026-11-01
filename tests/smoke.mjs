@@ -72,6 +72,18 @@ async function run() {
     const text = await r.text();
     assert(text.includes("requesthub-widget"), "embed.js missing expected marker");
   });
+  await check("changelog-embed.js", async () => {
+    const r = await fetch(BASE_URL + "/changelog-embed.js");
+    assert(r.status === 200, "status " + r.status);
+    const text = await r.text();
+    assert(text.includes("requesthub-changelog-widget"), "changelog-embed.js missing expected marker");
+  });
+  await check("changelog-widget.html", async () => {
+    const r = await fetch(BASE_URL + "/changelog-widget.html?customer=" + CUSTOMER);
+    assert(r.status === 200, "status " + r.status);
+    const text = await r.text();
+    assert(text.includes("What's new"), "changelog-widget.html missing expected content");
+  });
 
   console.log("\nCore read/write loop (public, no auth):");
   let ideaId;
