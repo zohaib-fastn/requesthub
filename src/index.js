@@ -81,7 +81,7 @@ const DESIGN_TOKENS = `
       --border: #e7e4f0;
       --text: #26233a;
       --text-muted: #5f5c73;
-      --text-faint: #9290a3;
+      --text-faint: #6a6580;
       --accent: #625afa;
       --accent-hover: #5345e5;
       --accent-tint: rgba(98, 90, 250, 0.14);
@@ -100,7 +100,7 @@ const DESIGN_TOKENS = `
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
         --bg: #17151f; --card: #201e2c; --surface-2: #231f30; --surface-3: #2b2739; --border: #332f41;
-        --text: #efedf6; --text-muted: #b2aec2; --text-faint: #716d81;
+        --text: #efedf6; --text-muted: #b2aec2; --text-faint: #8a86a1;
         --accent: #9089ff; --accent-hover: #a39cff; --accent-tint: rgba(144, 137, 255, 0.2);
         --good: #4ade80; --good-tint: rgba(74, 222, 128, 0.16);
         --warn: #fbbf24; --warn-tint: rgba(251, 191, 36, 0.16);
@@ -110,7 +110,7 @@ const DESIGN_TOKENS = `
     }
     :root[data-theme="dark"] {
       --bg: #17151f; --card: #201e2c; --surface-2: #231f30; --surface-3: #2b2739; --border: #332f41;
-      --text: #efedf6; --text-muted: #b2aec2; --text-faint: #716d81;
+      --text: #efedf6; --text-muted: #b2aec2; --text-faint: #8a86a1;
       --accent: #9089ff; --accent-hover: #a39cff; --accent-tint: rgba(144, 137, 255, 0.2);
       --good: #4ade80; --good-tint: rgba(74, 222, 128, 0.16);
       --warn: #fbbf24; --warn-tint: rgba(251, 191, 36, 0.16);
@@ -3191,7 +3191,8 @@ function adminPage(customerSlug, isOwner) {
       width: 100%; margin-top: 7px; background: var(--surface-2); border: 1px solid transparent; color: var(--text-muted);
       border-radius: 6px; padding: 3px 7px; font-size: 10.5px; font-family: inherit; cursor: text;
     }
-    .tag-edit-input:hover, .tag-edit-input:focus { border-color: var(--border); color: var(--text); outline: none; }
+    .tag-edit-input:hover { border-color: var(--border); color: var(--text); }
+    .tag-edit-input:focus { border-color: var(--accent); color: var(--text); outline: 2px solid var(--accent); outline-offset: 1px; }
     .empty-col { color: var(--text-faint); font-size: 12px; padding: 10px 2px; }
   </style>
 </head>
