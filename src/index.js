@@ -1874,6 +1874,24 @@ function boardPage(customerSlug, isOwner) {
       background: none; color: var(--text-muted); border: none; padding: 10px 14px; font-size: 13.5px;
       cursor: pointer; font-family: inherit;
     }
+    .similar-ideas {
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+      padding: 10px 12px; margin: -2px 0 12px; display: none;
+    }
+    .similar-ideas.open { display: block; }
+    .similar-ideas-label { font-size: 11px; font-weight: 600; color: var(--text-faint); margin-bottom: 6px; }
+    .similar-idea-row {
+      display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px;
+      border-top: 1px solid var(--border);
+    }
+    .similar-idea-row:first-of-type { border-top: none; }
+    .similar-idea-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+    .similar-idea-votes { font-size: 11px; color: var(--text-faint); flex-shrink: 0; }
+    .similar-idea-upvote {
+      background: var(--accent-tint); color: var(--accent); border: none; border-radius: var(--radius-pill);
+      font-size: 11.5px; font-weight: 600; padding: 4px 10px; cursor: pointer; font-family: inherit; flex-shrink: 0;
+    }
+    .similar-idea-upvote:disabled { opacity: .5; cursor: default; }
 
     .sidebar { display: flex; flex-direction: column; gap: 18px; }
     .sidebar-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); padding: 0 10px; margin-bottom: 4px; }
@@ -1930,8 +1948,9 @@ function boardPage(customerSlug, isOwner) {
           <form id="submit-form">
             <div class="field">
               <label for="title">What's your idea, bug, or feedback?</label>
-              <input id="title" required maxlength="200" placeholder="e.g. Export data as CSV" />
+              <input id="title" required maxlength="200" placeholder="e.g. Export data as CSV" autocomplete="off" />
             </div>
+            <div class="similar-ideas" id="similarIdeas"></div>
             <div class="field">
               <label for="description">More detail (optional)</label>
               <textarea id="description" maxlength="2000" placeholder="Add any extra context..."></textarea>
@@ -2299,13 +2318,77 @@ function boardPage(customerSlug, isOwner) {
     });
     document.getElementById('cancelFormBtn').addEventListener('click', function () {
       document.getElementById('formCard').classList.remove('open');
+      clearSimilarIdeas();
     });
+
+    function clearSimilarIdeas() {
+      const box = document.getElementById('similarIdeas');
+      box.classList.remove('open');
+      box.innerHTML = '';
+    }
+
+    let similarIdeasTimer = null;
+    document.getElementById('title').addEventListener('input', function () {
+      clearTimeout(similarIdeasTimer);
+      const q = this.value.trim();
+      similarIdeasTimer = setTimeout(function () { renderSimilarIdeas(q); }, 250);
+    });
+
+    function renderSimilarIdeas(query) {
+      // Canny's single most-copied anti-duplicate trick: surface likely-existing
+      // ideas while the submitter is still typing, so they upvote instead of
+      // filing a near-duplicate the team then has to notice and merge by hand.
+      const words = query.toLowerCase().split(/\\s+/).filter(function (w) { return w.length > 2; });
+      if (!words.length) return clearSimilarIdeas();
+      const matches = allIdeas
+        .map(function (i) {
+          const haystack = (i.title + ' ' + (i.description || '')).toLowerCase();
+          const score = words.reduce(function (sum, w) { return sum + (haystack.indexOf(w) !== -1 ? 1 : 0); }, 0);
+          return { idea: i, score: score };
+        })
+        .filter(function (m) { return m.score > 0; })
+        .sort(function (a, b) { return b.score - a.score || b.idea.votes - a.idea.votes; })
+        .slice(0, 3);
+      if (!matches.length) return clearSimilarIdeas();
+      const votedIds = getVotedIds();
+      const box = document.getElementById('similarIdeas');
+      box.innerHTML = '<div class="similar-ideas-label">Already suggested? Upvote instead of posting a duplicate:</div>' +
+        matches.map(function (m) {
+          const i = m.idea;
+          const hasVoted = votedIds.indexOf(i.id) !== -1;
+          return '<div class="similar-idea-row">' +
+            '<span class="similar-idea-title" title="' + escapeHtml(i.title) + '">' + escapeHtml(i.title) + '</span>' +
+            '<span class="similar-idea-votes">' + i.votes + ' vote' + (i.votes === 1 ? '' : 's') + '</span>' +
+            '<button type="button" class="similar-idea-upvote" data-idea-id="' + i.id + '"' + (hasVoted ? ' disabled' : '') + '>' + (hasVoted ? 'Voted' : 'Upvote') + '</button>' +
+            '</div>';
+        }).join('');
+      box.classList.add('open');
+      box.querySelectorAll('.similar-idea-upvote').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          if (btn.disabled) return;
+          const ideaId = btn.getAttribute('data-idea-id');
+          btn.disabled = true;
+          btn.textContent = 'Voted';
+          fetch('/api/ideas/' + ideaId + '/vote', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ direction: 'up' }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function () {
+              addVotedId(Number(ideaId));
+              load();
+            });
+        });
+      });
+    }
 
     document.addEventListener('keydown', function (e) {
       const tag = (document.activeElement && document.activeElement.tagName) || '';
       const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
       if (e.key === 'Escape') {
         document.getElementById('formCard').classList.remove('open');
+        clearSimilarIdeas();
         if (document.activeElement) document.activeElement.blur();
         return;
       }
@@ -2343,6 +2426,7 @@ function boardPage(customerSlug, isOwner) {
           document.getElementById('submitterEmail').value = '';
           document.getElementById('tags').value = '';
           document.getElementById('formCard').classList.remove('open');
+          clearSimilarIdeas();
           load();
         })
         .catch(function () {
