@@ -34,6 +34,7 @@ const DELETE_IDEA_WORKFLOW_ID = "wf_90a8f1268843";
 const LIST_STATUS_HISTORY_WORKFLOW_ID = "wf_144ac631f830";
 const LIST_CHANGELOG_WORKFLOW_ID = "wf_69d695b3974e";
 const GET_BOARD_STATS_WORKFLOW_ID = "wf_4146c0839e38";
+const SET_IDEA_PINNED_WORKFLOW_ID = "wf_50b43c697fb7";
 const OWNER_SLUG = "__owner__";
 
 // Bidirectional: a Linear state change updates the matching idea's status in
@@ -1572,6 +1573,8 @@ function boardPage(customerSlug, isOwner) {
     .empty { color: var(--text-faint); font-size: 13.5px; text-align: center; padding: 40px 16px; }
 
     .idea { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 14px 16px; margin-bottom: 8px; }
+    .idea.pinned { border-color: var(--accent); background: var(--accent-tint); }
+    .pin-badge { font-size: 11px; vertical-align: 1px; }
     .idea-row { display: flex; gap: 14px; align-items: flex-start; }
     .idea-body { flex: 1; min-width: 0; }
     .idea-title { font-weight: 600; font-size: 14px; color: var(--text); }
@@ -1843,6 +1846,8 @@ function boardPage(customerSlug, isOwner) {
         return true;
       });
       ideas = ideas.slice().sort(function (a, b) {
+        var pinDiff = (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0);
+        if (pinDiff) return pinDiff;
         if (sort === 'new') return new Date(b.created_at) - new Date(a.created_at);
         if (sort === 'trending') return trendingScore(b) - trendingScore(a);
         if (sort === 'comments') return (b.comment_count || 0) - (a.comment_count || 0);
@@ -1857,7 +1862,7 @@ function boardPage(customerSlug, isOwner) {
 
       list.innerHTML = ideas.map(function (i) {
         const hasVoted = voted.indexOf(i.id) !== -1;
-        return '<div class="idea">' +
+        return '<div class="idea' + (i.is_pinned ? ' pinned' : '') + '">' +
           '<div class="idea-row">' +
           '<div class="vote-widget">' +
           '<button class="vote-arrow up' + (hasVoted ? ' on' : '') + '" data-idea-id="' + i.id + '"' + (hasVoted ? ' disabled' : '') + ' title="Vote">' + ICONS.chevronUp + '</button>' +
@@ -1865,7 +1870,7 @@ function boardPage(customerSlug, isOwner) {
           '<button class="vote-arrow down' + (hasVoted ? '' : ' disabled') + '" data-idea-id="' + i.id + '"' + (hasVoted ? '' : ' disabled') + ' title="Remove vote">' + ICONS.chevronDown + '</button>' +
           '</div>' +
           '<div class="idea-body">' +
-          '<div class="idea-title">' + escapeHtml(i.title) + '</div>' +
+          '<div class="idea-title">' + (i.is_pinned ? '<span class="pin-badge" title="Pinned by the team">&#128204;</span> ' : '') + escapeHtml(i.title) + '</div>' +
           (i.description ? '<div class="idea-desc">' + escapeHtml(i.description) + '</div>' : '') +
           '<div class="meta">' +
           '<span class="chip" style="background:' + categoryColor(i.category).bg + ';color:' + categoryColor(i.category).fg + '">' + (ICONS[i.category] || '') + escapeHtml(i.category) + '</span>' +
@@ -2812,9 +2817,10 @@ function adminPage(customerSlug, isOwner) {
     .column-title { font-weight: 700; font-size: 13px; color: var(--text); }
     .column-count { margin-left: auto; background: var(--card); color: var(--text-faint); font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
 
-    .card { position: relative; background: var(--card); border: 1px solid var(--border); border-left-width: 3px; border-radius: 12px; padding: 12px 28px 12px 28px; margin-bottom: 8px; cursor: grab; }
+    .card { position: relative; background: var(--card); border: 1px solid var(--border); border-left-width: 3px; border-radius: 12px; padding: 12px 48px 12px 28px; margin-bottom: 8px; cursor: grab; }
     .card.dragging { opacity: 0.4; }
     .card.selected { outline: 2px solid var(--accent); outline-offset: -1px; }
+    .card.pinned { background: var(--accent-tint); }
     .card-select {
       position: absolute; top: 10px; left: 8px; width: 14px; height: 14px; cursor: pointer; margin: 0;
     }
@@ -2823,6 +2829,12 @@ function adminPage(customerSlug, isOwner) {
       border: none; border-radius: 50%; background: transparent; color: var(--text-faint); font-size: 15px; cursor: pointer; padding: 0;
     }
     .card-delete-btn:hover { background: var(--bad-tint); color: var(--bad); }
+    .card-pin-btn {
+      position: absolute; top: 6px; right: 26px; width: 18px; height: 18px; line-height: 16px; text-align: center;
+      border: none; border-radius: 50%; background: transparent; color: var(--text-faint); font-size: 11px; cursor: pointer; padding: 0; opacity: 0.5;
+    }
+    .card-pin-btn:hover { background: var(--accent-tint); color: var(--accent); opacity: 1; }
+    .card-pin-btn.active { color: var(--accent); opacity: 1; }
     .card-title { font-weight: 600; font-size: 13px; color: var(--text); }
     .card-desc { color: var(--text-muted); font-size: 11.5px; margin-top: 4px; line-height: 1.4; }
     .card-meta { margin-top: 9px; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
@@ -2973,7 +2985,7 @@ function adminPage(customerSlug, isOwner) {
 
       board.innerHTML = statuses.map(function (status) {
         const items = filtered.filter(function (i) { return i.status === status; })
-          .sort(function (a, b) { return b.votes - a.votes; });
+          .sort(function (a, b) { return (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0) || b.votes - a.votes; });
         const cards = items.length
           ? items.map(function (i) {
               const badges = [];
@@ -2982,8 +2994,9 @@ function adminPage(customerSlug, isOwner) {
               if (i.notion_archived_at) badges.push('<span class="chip badge">Notion</span>');
               badges.push('<a class="chip badge" href="/b/' + encodeURIComponent(customerSlug) + '/ideas/' + i.id + '" title="Open and reply">Reply</a>');
               var catColor = categoryColor(i.category);
-              return '<div class="card' + (selectedIds.has(i.id) ? ' selected' : '') + '" style="border-left-color:' + catColor.fg + '" draggable="true" data-idea-id="' + i.id + '">' +
+              return '<div class="card' + (selectedIds.has(i.id) ? ' selected' : '') + (i.is_pinned ? ' pinned' : '') + '" style="border-left-color:' + catColor.fg + '" draggable="true" data-idea-id="' + i.id + '">' +
                 '<input type="checkbox" class="card-select" data-idea-id="' + i.id + '"' + (selectedIds.has(i.id) ? ' checked' : '') + ' title="Select for bulk actions" />' +
+                '<button type="button" class="card-pin-btn' + (i.is_pinned ? ' active' : '') + '" data-idea-id="' + i.id + '" data-pinned="' + (i.is_pinned ? '1' : '0') + '" title="' + (i.is_pinned ? 'Unpin' : 'Pin to top') + '">&#128204;</button>' +
                 '<button type="button" class="card-delete-btn" data-idea-id="' + i.id + '" title="Delete">&times;</button>' +
                 '<div class="card-title">' + escapeHtml(i.title) + '</div>' +
                 (i.description ? '<div class="card-desc">' + escapeHtml(i.description) + '</div>' : '') +
@@ -3025,6 +3038,19 @@ function adminPage(customerSlug, isOwner) {
             method: 'DELETE',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ customerSlug: customerSlug }),
+          }).then(function () { load(); });
+        });
+      });
+
+      board.querySelectorAll('.card-pin-btn').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var ideaId = btn.getAttribute('data-idea-id');
+          var currentlyPinned = btn.getAttribute('data-pinned') === '1';
+          fetch('/api/ideas/' + ideaId + '/pin', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ customerSlug: customerSlug, pinned: !currentlyPinned }),
           }).then(function () { load(); });
         });
       });
@@ -4752,6 +4778,37 @@ export default {
         if (data?.idea) {
           deliverWebhooks(env, ctx, statusCustomerSlug, "idea.status_changed", data.idea);
         }
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
+    const pinMatch = url.pathname.match(/^\/api\/ideas\/(\d+)\/pin$/);
+    if (request.method === "POST" && pinMatch) {
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ ok: false, error: "invalid JSON body" }, 400);
+      }
+      const pinCustomerSlug = (body.customerSlug || "").trim();
+      if (!pinCustomerSlug) {
+        return json({ ok: false, error: "customerSlug is required" }, 400);
+      }
+      if (!(await requireAuth(request, env, pinCustomerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      try {
+        const listData = await callWorkflow(env, LIST_WORKFLOW_ID, { customerSlug: pinCustomerSlug });
+        const belongs = (listData?.ideas || []).some((i) => i.id === Number(pinMatch[1]));
+        if (!belongs) {
+          return json({ ok: false, error: "idea not found for this customer" }, 404);
+        }
+        const data = await callWorkflow(env, SET_IDEA_PINNED_WORKFLOW_ID, {
+          ideaId: Number(pinMatch[1]),
+          pinned: Boolean(body.pinned),
+        });
         return json(data);
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);

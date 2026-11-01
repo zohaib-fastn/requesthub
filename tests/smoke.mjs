@@ -231,6 +231,14 @@ async function run() {
     });
     assert(r.status === 401, "status " + r.status);
   });
+  await check("pin idea requires auth", async () => {
+    const r = await fetch(BASE_URL + "/api/ideas/" + ideaId + "/pin", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ customerSlug: CUSTOMER, pinned: true }),
+    });
+    assert(r.status === 401, "status " + r.status);
+  });
   await check("delete idea requires auth", async () => {
     const r = await fetch(BASE_URL + "/api/ideas/" + ideaId, {
       method: "DELETE",
