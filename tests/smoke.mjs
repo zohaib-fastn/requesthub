@@ -128,6 +128,35 @@ async function run() {
     assert(body.ok === true, "custom-category submit failed: " + JSON.stringify(body));
     assert(body.idea.category === "Smoke Test Category", "category not stored as submitted");
   });
+  await check("submit idea with tags normalizes, dedupes, and caps at 5", async () => {
+    const r = await fetch(BASE_URL + "/api/ideas", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        customerSlug: CUSTOMER,
+        title: "[smoke-test] tags check " + Date.now(),
+        category: "Feature",
+        tags: ["Mobile", "mobile", " API ", "third", "fourth", "fifth", "sixth"],
+      }),
+    });
+    const body = await r.json();
+    assert(body.ok === true, "tagged submit failed: " + JSON.stringify(body));
+    assert(Array.isArray(body.idea.tags), "idea.tags was not an array");
+    assert(body.idea.tags.length === 5, "expected tags capped at 5, got " + body.idea.tags.length);
+    assert(body.idea.tags.includes("mobile") && body.idea.tags.includes("api"), "tags not normalized/deduped as expected: " + JSON.stringify(body.idea.tags));
+    const listR = await fetch(BASE_URL + "/api/ideas?customer=" + CUSTOMER);
+    const listBody = await listR.json();
+    const found = listBody.ideas.find((i) => i.id === body.idea.id);
+    assert(found && Array.isArray(found.tags) && found.tags.length === 5, "tags not reflected in idea list");
+  });
+  await check("tag edit requires auth", async () => {
+    const r = await fetch(BASE_URL + "/api/ideas/" + ideaId + "/tags", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ customerSlug: CUSTOMER, tags: ["hacked"] }),
+    });
+    assert(r.status === 401, "status " + r.status);
+  });
   await check("idea has a permalink page", async () => {
     const r = await fetch(BASE_URL + "/b/" + CUSTOMER + "/ideas/" + ideaId);
     assert(r.status === 200, "status " + r.status);

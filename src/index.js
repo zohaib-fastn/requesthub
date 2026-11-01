@@ -43,6 +43,7 @@ const SUBSCRIBE_TO_IDEA_WORKFLOW_ID = "wf_0da569772406";
 const UNSUBSCRIBE_FROM_IDEA_WORKFLOW_ID = "wf_e9c4ba6a2a89";
 const MERGE_IDEAS_WORKFLOW_ID = "wf_6892767f2392";
 const GET_IDEA_RAW_WORKFLOW_ID = "wf_9de7b9762be9";
+const SET_IDEA_TAGS_WORKFLOW_ID = "wf_3adbca8413a5";
 const OWNER_SLUG = "__owner__";
 
 // Bidirectional: a Linear state change updates the matching idea's status in
@@ -128,6 +129,10 @@ const DESIGN_TOKENS = `
       display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-muted); flex-shrink: 0;
     }
     .theme-toggle:hover { color: var(--text); background: var(--surface-2); }
+    .tag-chip {
+      display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px;
+      font-weight: 600; font-size: 10.5px; background: var(--surface-3); color: var(--text-muted);
+    }
 `;
 const THEME_TOGGLE_SCRIPT = `
     (function () {
@@ -1882,6 +1887,10 @@ function boardPage(customerSlug, isOwner) {
                 <input id="submitterEmail" type="email" placeholder="you@example.com" />
               </div>
             </div>
+            <div class="field">
+              <label>Tags (optional, comma separated, up to 5)</label>
+              <input id="tags" maxlength="200" placeholder="e.g. mobile, performance" />
+            </div>
             <button type="submit" class="btn-submit" id="submitFormBtn">Submit</button>
             <button type="button" class="btn-cancel" id="cancelFormBtn">Cancel</button>
           </form>
@@ -1995,9 +2004,10 @@ function boardPage(customerSlug, isOwner) {
         if (q) {
           var inTitle = i.title.toLowerCase().indexOf(q) !== -1;
           var inDesc = (i.description || '').toLowerCase().indexOf(q) !== -1;
+          var inTags = (i.tags || []).some(function (t) { return t.toLowerCase().indexOf(q) !== -1; });
           var inComments = (commentsByIdea[i.id] || []).some(function (c) { return c.toLowerCase().indexOf(q) !== -1; });
-          if (!inTitle && !inDesc && !inComments) return false;
-          if (inComments && !inTitle && !inDesc) commentMatchIds[i.id] = true;
+          if (!inTitle && !inDesc && !inTags && !inComments) return false;
+          if (inComments && !inTitle && !inDesc && !inTags) commentMatchIds[i.id] = true;
         }
         return true;
       });
@@ -2031,6 +2041,7 @@ function boardPage(customerSlug, isOwner) {
           '<div class="meta">' +
           '<span class="chip" style="background:' + categoryColor(i.category).bg + ';color:' + categoryColor(i.category).fg + '">' + (ICONS[i.category] || '') + escapeHtml(i.category) + '</span>' +
           '<span class="chip status-chip ' + i.status + '">' + (statusLabels[i.status] || i.status.replace('_', ' ')) + '</span>' +
+          (i.tags || []).map(function (t) { return '<span class="tag-chip">#' + escapeHtml(t) + '</span>'; }).join('') +
           '<span class="meta-right">' +
           '<button class="comment-count" data-idea-id="' + i.id + '">' + ICONS.comment + '<span class="cc-num">' + (i.comment_count ? i.comment_count + ' Comment' + (i.comment_count === 1 ? '' : 's') : 'Comments') + '</span></button>' +
           '<a class="comment-count" href="/b/' + encodeURIComponent(customerSlug) + '/ideas/' + i.id + '" title="Shareable link to this idea">&#128279;</a>' +
@@ -2252,6 +2263,7 @@ function boardPage(customerSlug, isOwner) {
       const description = document.getElementById('description').value.trim();
       const category = document.getElementById('category').value;
       const submitterEmail = document.getElementById('submitterEmail').value.trim();
+      const tags = document.getElementById('tags').value.split(',').map(function (t) { return t.trim(); }).filter(Boolean);
       if (!title) return;
       const submitBtn = document.getElementById('submitFormBtn');
       submitBtn.disabled = true;
@@ -2259,13 +2271,14 @@ function boardPage(customerSlug, isOwner) {
       fetch('/api/ideas', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ customerSlug, title, description, category, submitterEmail }),
+        body: JSON.stringify({ customerSlug, title, description, category, submitterEmail, tags }),
       })
         .then(function (r) { return r.json(); })
         .then(function () {
           document.getElementById('title').value = '';
           document.getElementById('description').value = '';
           document.getElementById('submitterEmail').value = '';
+          document.getElementById('tags').value = '';
           document.getElementById('formCard').classList.remove('open');
           load();
         })
@@ -2461,6 +2474,7 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
         '<div class="idea-meta">' +
         '<span class="chip" style="background:' + categoryColor(idea.category).bg + ';color:' + categoryColor(idea.category).fg + '">' + escapeHtml(idea.category) + '</span>' +
         '<span class="chip status-chip ' + idea.status + '">' + (statusLabels[idea.status] || idea.status) + '</span>' +
+        (idea.tags || []).map(function (t) { return '<span class="tag-chip">#' + escapeHtml(t) + '</span>'; }).join('') +
         badges.join('') +
         '<span style="color:var(--text-faint);font-size:11px;margin-left:auto;">' + date + '</span>' +
         '</div>' +
@@ -2877,6 +2891,7 @@ function roadmapPage(customerSlug, isOwner) {
                 (i.description ? '<div class="card-desc">' + escapeHtml(i.description) + '</div>' : '') +
                 '<div class="card-meta">' +
                 '<span class="chip" style="background:' + catColor.bg + ';color:' + catColor.fg + '">' + escapeHtml(i.category) + '</span>' +
+                (i.tags || []).map(function (t) { return '<span class="tag-chip">#' + escapeHtml(t) + '</span>'; }).join('') +
                 '</div>' +
                 '</div>' +
                 '<div class="vote-box"><svg class="icon" viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15"/></svg><span class="vote-num">' + i.votes + '</span></div>' +
@@ -3110,6 +3125,11 @@ function adminPage(customerSlug, isOwner) {
     .chip.badge { background: var(--surface-3); color: var(--text-muted); text-decoration: none; }
     .chip.badge:hover { color: var(--text); }
     .card-votes { color: var(--text-faint); font-size: 10.5px; margin-left: auto; font-weight: 600; }
+    .tag-edit-input {
+      width: 100%; margin-top: 7px; background: var(--surface-2); border: 1px solid transparent; color: var(--text-muted);
+      border-radius: 6px; padding: 3px 7px; font-size: 10.5px; font-family: inherit; cursor: text;
+    }
+    .tag-edit-input:hover, .tag-edit-input:focus { border-color: var(--border); color: var(--text); outline: none; }
     .empty-col { color: var(--text-faint); font-size: 12px; padding: 10px 2px; }
   </style>
 </head>
@@ -3276,7 +3296,12 @@ function adminPage(customerSlug, isOwner) {
 
       const filtered = allIdeas.filter(function (i) {
         if (category !== 'all' && i.category !== category) return false;
-        if (q && i.title.toLowerCase().indexOf(q) === -1 && (i.description || '').toLowerCase().indexOf(q) === -1) return false;
+        if (q) {
+          var inTitleQ = i.title.toLowerCase().indexOf(q) !== -1;
+          var inDescQ = (i.description || '').toLowerCase().indexOf(q) !== -1;
+          var inTagsQ = (i.tags || []).some(function (t) { return t.toLowerCase().indexOf(q) !== -1; });
+          if (!inTitleQ && !inDescQ && !inTagsQ) return false;
+        }
         return true;
       });
 
@@ -3299,9 +3324,11 @@ function adminPage(customerSlug, isOwner) {
                 (i.description ? '<div class="card-desc">' + escapeHtml(i.description) + '</div>' : '') +
                 '<div class="card-meta">' +
                 '<span class="chip" style="background:' + catColor.bg + ';color:' + catColor.fg + '">' + escapeHtml(i.category) + '</span>' +
+                (i.tags || []).map(function (t) { return '<span class="tag-chip">#' + escapeHtml(t) + '</span>'; }).join('') +
                 badges.join('') +
                 '<span class="card-votes">' + i.votes + ' votes</span>' +
                 '</div>' +
+                '<input type="text" class="tag-edit-input" data-idea-id="' + i.id + '" value="' + escapeHtml((i.tags || []).join(', ')) + '" placeholder="tags, comma separated" title="Edit tags" />' +
                 '</div>';
             }).join('')
           : '<div class="empty-col">Nothing here.</div>';
@@ -3349,6 +3376,40 @@ function adminPage(customerSlug, isOwner) {
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ customerSlug: customerSlug, pinned: !currentlyPinned }),
           }).then(function () { load(); });
+        });
+      });
+
+      board.querySelectorAll('.tag-edit-input').forEach(function (input) {
+        input.addEventListener('click', function (e) { e.stopPropagation(); });
+        input.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+        var originalValue = input.value;
+        function saveTags() {
+          if (input.value === originalValue) return;
+          var pendingValue = input.value;
+          var ideaId = input.getAttribute('data-idea-id');
+          var tags = pendingValue.split(',').map(function (t) { return t.trim(); }).filter(Boolean);
+          fetch('/api/ideas/' + ideaId + '/tags', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ customerSlug: customerSlug, tags: tags }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (!d.ok) throw new Error(d.error || 'save failed');
+              originalValue = pendingValue;
+              load();
+            })
+            .catch(function () {
+              // Leave the typed text and originalValue as they were, so the
+              // next blur (even with no further edits) retries the save
+              // instead of silently treating it as already-saved.
+              input.style.borderColor = 'var(--bad)';
+              setTimeout(function () { input.style.borderColor = ''; }, 1500);
+            });
+        }
+        input.addEventListener('blur', saveTags);
+        input.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
         });
       });
 
@@ -5174,6 +5235,7 @@ export default {
             description: body.description || "",
             category: body.category || "Feature",
             submitterEmail: body.submitterEmail || "",
+            tags: Array.isArray(body.tags) ? body.tags : [],
             ...(slackChannel ? { slackChannel } : {}),
           },
           endOrgId
@@ -5417,6 +5479,38 @@ export default {
         const data = await callWorkflow(env, SET_IDEA_PINNED_WORKFLOW_ID, {
           ideaId: Number(pinMatch[1]),
           pinned: Boolean(body.pinned),
+        });
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
+    const tagsMatch = url.pathname.match(/^\/api\/ideas\/(\d+)\/tags$/);
+    if (request.method === "POST" && tagsMatch) {
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ ok: false, error: "invalid JSON body" }, 400);
+      }
+      const tagsCustomerSlug = (body.customerSlug || "").trim();
+      if (!tagsCustomerSlug) {
+        return json({ ok: false, error: "customerSlug is required" }, 400);
+      }
+      if (!(await requireAuth(request, env, tagsCustomerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      try {
+        const listData = await callWorkflow(env, LIST_WORKFLOW_ID, { customerSlug: tagsCustomerSlug });
+        const belongs = (listData?.ideas || []).some((i) => i.id === Number(tagsMatch[1]));
+        if (!belongs) {
+          return json({ ok: false, error: "idea not found for this customer" }, 404);
+        }
+        const data = await callWorkflow(env, SET_IDEA_TAGS_WORKFLOW_ID, {
+          ideaId: Number(tagsMatch[1]),
+          customerSlug: tagsCustomerSlug,
+          tags: Array.isArray(body.tags) ? body.tags : [],
         });
         return json(data);
       } catch (err) {
