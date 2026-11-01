@@ -132,6 +132,32 @@ async function run() {
     const r = await fetch(BASE_URL + "/b/" + CUSTOMER + "/ideas/" + ideaId);
     assert(r.status === 200, "status " + r.status);
   });
+  await check("subscribe to idea updates", async () => {
+    const r = await fetch(BASE_URL + "/api/ideas/" + ideaId + "/subscribe", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "smoke-test-subscriber@example.com" }),
+    });
+    const body = await r.json();
+    assert(r.status === 200, "status " + r.status);
+    assert(body.ok === true, "subscribe failed: " + JSON.stringify(body));
+  });
+  await check("subscribe rejects a missing email", async () => {
+    const r = await fetch(BASE_URL + "/api/ideas/" + ideaId + "/subscribe", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const body = await r.json();
+    assert(r.status === 400, "status " + r.status);
+    assert(body.ok === false, "expected ok:false");
+  });
+  await check("unsubscribe page handles an unknown token gracefully", async () => {
+    const r = await fetch(BASE_URL + "/unsubscribe?token=not-a-real-token");
+    const text = await r.text();
+    assert(r.status === 200, "status " + r.status);
+    assert(text.includes("Couldn't unsubscribe"), "missing expected error copy");
+  });
   let voterCookie = "";
   const votesBefore = (await (await fetch(BASE_URL + "/api/ideas?customer=" + CUSTOMER)).json()).ideas.find((i) => i.id === ideaId).votes;
   await check("vote up (mints a voter-identity cookie)", async () => {

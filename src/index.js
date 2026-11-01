@@ -39,6 +39,8 @@ const LIST_SEARCHABLE_COMMENTS_WORKFLOW_ID = "wf_8a542072003b";
 const SET_API_KEY_WORKFLOW_ID = "wf_b1a39a7eb739";
 const GET_API_KEY_STATUS_WORKFLOW_ID = "wf_28d8c655572b";
 const FIND_CUSTOMER_BY_API_KEY_HASH_WORKFLOW_ID = "wf_0931d09170dc";
+const SUBSCRIBE_TO_IDEA_WORKFLOW_ID = "wf_0da569772406";
+const UNSUBSCRIBE_FROM_IDEA_WORKFLOW_ID = "wf_e9c4ba6a2a89";
 const OWNER_SLUG = "__owner__";
 
 // Bidirectional: a Linear state change updates the matching idea's status in
@@ -2323,6 +2325,18 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
     .chip.status-chip.declined { background-color: var(--bad-tint); color: var(--bad); }
     .chip.badge { background: var(--surface-3); color: var(--text-muted); text-decoration: none; }
 
+    .subscribe-row { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .subscribe-row input {
+      background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: 7px 10px; font-size: 12.5px; font-family: inherit; min-width: 180px;
+    }
+    .subscribe-row button {
+      background: none; border: 1px solid var(--border); color: var(--text-muted); border-radius: 8px;
+      padding: 7px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .subscribe-row button:hover { color: var(--text); border-color: var(--accent); }
+    .subscribe-done { color: var(--good); font-size: 12.5px; font-weight: 600; }
+
     .timeline { margin-top: 18px; display: flex; flex-direction: column; gap: 6px; }
     .timeline-item { font-size: 12px; color: var(--text-muted); display: flex; gap: 6px; align-items: baseline; }
     .timeline-item .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
@@ -2403,6 +2417,18 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
       } catch (e) {}
     }
 
+    function getSubscribedIds() {
+      try { return JSON.parse(localStorage.getItem('requesthub_subscribed_' + customerSlug) || '[]'); }
+      catch (e) { return []; }
+    }
+    function addSubscribedId(id) {
+      try {
+        var ids = getSubscribedIds();
+        if (ids.indexOf(id) === -1) ids.push(id);
+        localStorage.setItem('requesthub_subscribed_' + customerSlug, JSON.stringify(ids));
+      } catch (e) {}
+    }
+
     document.getElementById('copyLinkBtn').addEventListener('click', function () {
       var btn = this;
       navigator.clipboard.writeText(window.location.href).then(function () {
@@ -2436,6 +2462,12 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
         badges.join('') +
         '<span style="color:var(--text-faint);font-size:11px;margin-left:auto;">' + date + '</span>' +
         '</div>' +
+        '<div class="subscribe-row" id="subscribeRow">' +
+        (getSubscribedIds().indexOf(idea.id) !== -1
+          ? '<span class="subscribe-done">&#9993; You\\'ll get emailed about updates to this idea.</span>'
+          : '<input id="subscribeEmail" type="email" placeholder="your@email.com" />' +
+            '<button type="button" id="subscribeBtn">Notify me about updates</button>') +
+        '</div>' +
         '<div class="timeline" id="timeline"></div>' +
         '</div>' +
         '</div>' +
@@ -2467,6 +2499,39 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
             }
           });
       });
+
+      var subscribeBtn = document.getElementById('subscribeBtn');
+      if (subscribeBtn) {
+        subscribeBtn.addEventListener('click', function () {
+          var emailInput = document.getElementById('subscribeEmail');
+          var email = emailInput.value.trim();
+          if (!email) return;
+          subscribeBtn.disabled = true;
+          subscribeBtn.textContent = 'Subscribing...';
+          fetch('/api/ideas/' + idea.id + '/subscribe', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ email: email }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (d.ok) {
+                addSubscribedId(idea.id);
+                document.getElementById('subscribeRow').innerHTML =
+                  '<span class="subscribe-done">&#9993; You\\'ll get emailed about updates to this idea.</span>';
+              } else {
+                subscribeBtn.disabled = false;
+                subscribeBtn.textContent = 'Notify me about updates';
+                alert(d.error || 'Could not subscribe right now - please try again.');
+              }
+            })
+            .catch(function () {
+              subscribeBtn.disabled = false;
+              subscribeBtn.textContent = 'Notify me about updates';
+              alert('Could not subscribe right now - please try again.');
+            });
+        });
+      }
 
       document.getElementById('commentBtn').addEventListener('click', function () {
         var name = document.getElementById('commentName').value.trim() || (isAdmin ? 'Team' : 'Anonymous');
@@ -3702,6 +3767,34 @@ function changelogWidgetPage(customerSlug, color) {
 </html>`;
 }
 
+function unsubscribePage(ok, ideaTitle, error) {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Unsubscribe - RequestHub</title>
+  ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
+  <style>
+    ${DESIGN_TOKENS}
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { max-width: 420px; text-align: center; padding: 32px; }
+    h1 { font-size: 18px; margin: 0 0 8px; color: var(--text); }
+    p { color: var(--text-muted); font-size: 13.5px; margin: 0 0 16px; }
+    a { color: var(--accent); font-size: 13px; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    ${ok
+      ? `<h1>You're unsubscribed</h1><p>You won't get any more email updates about${ideaTitle ? ` "${escapeHtml(ideaTitle)}"` : " this idea"}.</p>`
+      : `<h1>Couldn't unsubscribe</h1><p>${escapeHtml(error || "That link is invalid or has already been used.")}</p>`}
+  </div>
+</body>
+</html>`;
+}
+
 function widgetPage(customerSlug, color) {
   const accent = color || "#6d5ef8";
   return `<!doctype html>
@@ -4183,6 +4276,16 @@ export default {
       const rawColor = url.searchParams.get("color") || "";
       const color = /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(rawColor) ? rawColor : null;
       return html(changelogWidgetPage(customerSlug, color));
+    }
+
+    if (request.method === "GET" && url.pathname === "/unsubscribe") {
+      const token = url.searchParams.get("token") || "";
+      try {
+        const data = await callWorkflow(env, UNSUBSCRIBE_FROM_IDEA_WORKFLOW_ID, { token });
+        return html(unsubscribePage(data?.ok, data?.ideaTitle, data?.error));
+      } catch (err) {
+        return html(unsubscribePage(false, null, err.message));
+      }
     }
 
     if (request.method === "GET" && url.pathname === "/signup") {
@@ -4953,6 +5056,7 @@ export default {
             // This status change originated in Linear - pushing it back would
             // just be echoing Linear's own state back at itself.
             syncToLinearState: false,
+            baseUrl: url.origin,
           },
           endOrgId
         );
@@ -5053,6 +5157,31 @@ export default {
           voterKey,
         });
         return json(data, 200, setCookie ? { "set-cookie": setCookie } : {});
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
+    const subscribeMatch = url.pathname.match(/^\/api\/ideas\/(\d+)\/subscribe$/);
+    if (request.method === "POST" && subscribeMatch) {
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ ok: false, error: "invalid JSON body" }, 400);
+      }
+      const email = (body.email || "").trim();
+      if (!email) {
+        return json({ ok: false, error: "email is required" }, 400);
+      }
+      try {
+        const unsubscribeToken = toHex(crypto.getRandomValues(new Uint8Array(24)));
+        const data = await callWorkflow(env, SUBSCRIBE_TO_IDEA_WORKFLOW_ID, {
+          ideaId: Number(subscribeMatch[1]),
+          email,
+          unsubscribeToken,
+        });
+        return json(data);
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
       }
@@ -5205,6 +5334,7 @@ export default {
             linearTeamId: body.linearTeamId || settings?.linearTeamId || DEFAULT_LINEAR_TEAM_ID,
             notionPageId: body.notionPageId || settings?.notionPageId || DEFAULT_NOTION_PAGE_ID,
             linearStateIds: settings?.linearStateIds || {},
+            baseUrl: url.origin,
           },
           endOrgId
         );
@@ -5350,6 +5480,7 @@ export default {
               linearTeamId: settings?.linearTeamId || DEFAULT_LINEAR_TEAM_ID,
               notionPageId: settings?.notionPageId || DEFAULT_NOTION_PAGE_ID,
               linearStateIds: settings?.linearStateIds || {},
+              baseUrl: url.origin,
             },
             endOrgId
           );
