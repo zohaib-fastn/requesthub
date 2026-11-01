@@ -92,6 +92,7 @@ async function run() {
     assert(body.ideas.some((i) => i.id === ideaId), "newly submitted idea not found in list");
     assert(body.statusLabels && body.statusLabels.declined, "statusLabels missing the declined status");
     assert(Array.isArray(body.categories) && body.categories.length > 0, "categories missing or empty");
+    assert(Array.isArray(body.hiddenRoadmapStatuses), "hiddenRoadmapStatuses was not an array");
   });
   await check("submit idea with a custom (non-default) category", async () => {
     const r = await fetch(BASE_URL + "/api/ideas", {

@@ -962,6 +962,8 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
       margin-bottom: 6px; cursor: pointer;
     }
     .field select:disabled { color: var(--text-faint); cursor: default; }
+    .field label.checkbox-label { display: flex; align-items: center; gap: 6px; }
+    .field label.checkbox-label input[type="checkbox"] { width: auto; }
     .field .select-note { font-size: 11.5px; color: var(--text-faint); margin: 0 0 6px; }
     .btn-submit {
       background: var(--accent); color: #fff; border: none; padding: 10px 18px; border-radius: var(--radius-btn);
@@ -1050,9 +1052,14 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
             const defaultLabel = DEFAULT_STATUS_LABELS[key];
             const currentLabel = settings.statusLabels?.[key] || defaultLabel;
             const needsLinear = key === "planned" || key === "in_progress" || key === "shipped";
+            const isHidden = (settings.hiddenRoadmapStatuses || []).includes(key);
             return `<div class="field">
           <label>${defaultLabel}</label>
           <input name="statusLabel_${key}" value="${escapeHtml(currentLabel)}" placeholder="${defaultLabel}" />
+          <label class="checkbox-label" style="font-weight:400;margin-top:6px;">
+            <input type="checkbox" name="hideFromRoadmap_${key}" ${isHidden ? "checked" : ""} />
+            Hide "${defaultLabel}" from the public roadmap
+          </label>
           ${needsLinear
             ? `<select id="linearState_${key}" name="linearStateId_${key}" data-current="${escapeHtml(settings.linearStateIds?.[key] || "")}" disabled><option>${settings.linearTeamId ? "Loading Linear states..." : "Connect a Linear team above first"}</option></select>
           <p class="select-note" id="linearStateNote_${key}"></p>`
@@ -1129,9 +1136,11 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
         var formData = new FormData(form);
         var statusLabels = {};
         var linearStateIds = {};
+        var hiddenRoadmapStatuses = [];
         formData.forEach(function (value, key) {
           if (key.indexOf('statusLabel_') === 0) statusLabels[key.slice('statusLabel_'.length)] = value;
           if (key.indexOf('linearStateId_') === 0) linearStateIds[key.slice('linearStateId_'.length)] = value;
+          if (key.indexOf('hideFromRoadmap_') === 0) hiddenRoadmapStatuses.push(key.slice('hideFromRoadmap_'.length));
         });
         var categoriesRaw = formData.get('categories') || '';
         var categories = categoriesRaw.split(',').map(function (c) { return c.trim(); }).filter(Boolean);
@@ -1142,6 +1151,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
           statusLabels: statusLabels,
           linearStateIds: linearStateIds,
           categories: categories,
+          hiddenRoadmapStatuses: hiddenRoadmapStatuses,
         };
 
         btn.disabled = true;
@@ -2582,11 +2592,14 @@ function roadmapPage(customerSlug, isOwner) {
       return d.innerHTML;
     }
 
-    function render(ideas, statusLabels) {
+    function render(ideas, statusLabels, hiddenRoadmapStatuses) {
       var labels = statusLabels || DEFAULT_LABELS;
-      var COLUMNS = ["under_review", "planned", "in_progress", "shipped", "declined"].map(function (key) {
-        return { key: key, label: labels[key] || DEFAULT_LABELS[key] };
-      });
+      var hidden = hiddenRoadmapStatuses || [];
+      var COLUMNS = ["under_review", "planned", "in_progress", "shipped", "declined"]
+        .filter(function (key) { return hidden.indexOf(key) === -1; })
+        .map(function (key) {
+          return { key: key, label: labels[key] || DEFAULT_LABELS[key] };
+        });
       var board = document.getElementById('board');
       board.innerHTML = COLUMNS.map(function (col) {
         var items = ideas.filter(function (i) { return i.status === col.key; })
@@ -2617,7 +2630,7 @@ function roadmapPage(customerSlug, isOwner) {
 
     fetch('/api/ideas?customer=' + encodeURIComponent(customerSlug))
       .then(function (r) { return r.json(); })
-      .then(function (d) { render(d.ideas || [], d.statusLabels); });
+      .then(function (d) { render(d.ideas || [], d.statusLabels, d.hiddenRoadmapStatuses); });
   </script>
 </body>
 </html>`;
@@ -3964,6 +3977,7 @@ export default {
       let statusLabels = {};
       let linearStateIds = {};
       let categories = [];
+      let hiddenRoadmapStatuses = [];
       if (contentType.includes("application/json")) {
         let body;
         try {
@@ -3977,6 +3991,7 @@ export default {
         statusLabels = body.statusLabels || {};
         linearStateIds = body.linearStateIds || {};
         categories = Array.isArray(body.categories) ? body.categories : [];
+        hiddenRoadmapStatuses = Array.isArray(body.hiddenRoadmapStatuses) ? body.hiddenRoadmapStatuses : [];
       } else {
         const form = await request.formData();
         slackChannel = form.get("slackChannel") || "";
@@ -3995,6 +4010,9 @@ export default {
           shipped: form.get("linearStateId_shipped") || "",
         };
         categories = (form.get("categories") || "").split(",").map((c) => c.trim()).filter(Boolean);
+        hiddenRoadmapStatuses = ["under_review", "planned", "in_progress", "shipped", "declined"].filter(
+          (key) => form.get(`hideFromRoadmap_${key}`)
+        );
       }
       try {
         await callWorkflow(env, SET_CUSTOMER_SETTINGS_WORKFLOW_ID, {
@@ -4005,6 +4023,7 @@ export default {
           statusLabels,
           linearStateIds,
           categories,
+          hiddenRoadmapStatuses,
         });
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
@@ -4291,12 +4310,14 @@ export default {
         }
         let statusLabels = null;
         let categories = null;
+        let hiddenRoadmapStatuses = [];
         try {
           const settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug });
           statusLabels = settings?.statusLabels || null;
           categories = settings?.categories || null;
+          hiddenRoadmapStatuses = settings?.hiddenRoadmapStatuses || [];
         } catch {}
-        return json({ ...data, ideas, statusLabels, categories });
+        return json({ ...data, ideas, statusLabels, categories, hiddenRoadmapStatuses });
       } catch (err) {
         return json({ ok: false, error: err.message, ideas: [] }, 502);
       }
