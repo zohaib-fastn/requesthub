@@ -751,7 +751,7 @@ function loginLookupPage(errorMsg) {
     <p>Enter your board's name to go to its admin login.</p>
     ${errorMsg ? `<div class="error">${escapeHtml(errorMsg)}</div>` : ""}
     <form id="form">
-      <input id="slug" required placeholder="e.g. acme-saas" autofocus />
+      <input id="slug" required placeholder="e.g. acme-saas" aria-label="Board name" autofocus />
       <button type="submit">Continue</button>
     </form>
     <a class="back" href="/">&larr; Back home</a>
@@ -1174,7 +1174,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
         <h2>Categories</h2>
         <p class="hint">What kind of feedback can customers submit? Comma-separated - rename, add, or remove to match your team's vocabulary (e.g. "Integration request", "Mobile"). Defaults to Feature, Bug, Feedback.</p>
         <div class="field">
-          <input name="categories" value="${escapeHtml((settings.categories || ["Feature", "Bug", "Feedback"]).join(", "))}" placeholder="Feature, Bug, Feedback" />
+          <input name="categories" value="${escapeHtml((settings.categories || ["Feature", "Bug", "Feedback"]).join(", "))}" placeholder="Feature, Bug, Feedback" aria-label="Categories" />
         </div>
       </div>
 
@@ -2104,9 +2104,9 @@ function boardPage(customerSlug, isOwner) {
           '<div class="comments" id="comments-' + i.id + '">' +
           '<div class="comments-list"></div>' +
           '<form class="comment-form" data-idea-id="' + i.id + '">' +
-          '<input class="comment-name" placeholder="Your name" maxlength="80" />' +
+          '<input class="comment-name" placeholder="Your name" maxlength="80" aria-label="Your name" />' +
           '<input class="comment-email" type="email" placeholder="Email (optional)" maxlength="200" aria-label="Your email (optional)" />' +
-          '<input class="comment-body" placeholder="Add a comment..." maxlength="2000" required />' +
+          '<input class="comment-body" placeholder="Add a comment..." maxlength="2000" required aria-label="Comment" />' +
           '<button type="submit">Post</button>' +
           '</form>' +
           '</div>' +
@@ -4023,9 +4023,9 @@ function widgetPage(customerSlug, color) {
     <div class="panel-body" id="panelBody">
       <p>Tell us what's missing, broken, or could be better.</p>
       <form id="form">
-        <div class="field"><input id="title" required maxlength="200" placeholder="What's on your mind?" /></div>
-        <div class="field"><textarea id="description" maxlength="2000" placeholder="More detail (optional)"></textarea></div>
-        <div class="field"><input id="email" type="email" placeholder="Your email (optional)" /></div>
+        <div class="field"><input id="title" required maxlength="200" placeholder="What's on your mind?" aria-label="What's on your mind?" /></div>
+        <div class="field"><textarea id="description" maxlength="2000" placeholder="More detail (optional)" aria-label="More detail (optional)"></textarea></div>
+        <div class="field"><input id="email" type="email" placeholder="Your email (optional)" aria-label="Your email (optional)" /></div>
         <button type="submit" class="btn-submit">Send feedback</button>
       </form>
     </div>
