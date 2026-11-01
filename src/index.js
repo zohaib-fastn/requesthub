@@ -33,6 +33,7 @@ const GET_WEBHOOK_DELIVERY_WORKFLOW_ID = "wf_42336ac2e7cd";
 const DELETE_IDEA_WORKFLOW_ID = "wf_90a8f1268843";
 const LIST_STATUS_HISTORY_WORKFLOW_ID = "wf_144ac631f830";
 const LIST_CHANGELOG_WORKFLOW_ID = "wf_69d695b3974e";
+const GET_BOARD_STATS_WORKFLOW_ID = "wf_4146c0839e38";
 const OWNER_SLUG = "__owner__";
 
 // Bidirectional: a Linear state change updates the matching idea's status in
@@ -2840,6 +2841,7 @@ function adminPage(customerSlug, isOwner) {
     <nav class="nav-right">
       ${isOwner ? `<a class="owner-link" href="/owner">&larr; Owner console</a>` : ""}
       <a href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+      <a href="/b/${encodeURIComponent(customerSlug)}/analytics">Analytics</a>
       <a href="/b/${encodeURIComponent(customerSlug)}/changelog">Changelog</a>
       <a href="/api/customers/${encodeURIComponent(customerSlug)}/export.csv">Export CSV</a>
       <a href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
@@ -3079,6 +3081,159 @@ function adminPage(customerSlug, isOwner) {
 
     populateBulkStatusSelect();
     load();
+  </script>
+</body>
+</html>`;
+}
+
+function analyticsPage(customerSlug, isOwner) {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Analytics - RequestHub</title>
+  ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
+  <style>
+    ${DESIGN_TOKENS}
+    .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+    .brand { font-weight: 700; font-size: 15px; }
+    .brand .org { color: var(--text-faint); font-weight: 500; }
+    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 16px; }
+    .nav-right a, .nav-right button { color: var(--text-muted); font-size: 13px; text-decoration: none; background: none; border: none; cursor: pointer; font-family: inherit; }
+    .nav-right a:hover, .nav-right button:hover { color: var(--text); }
+    .nav-right a.owner-link { color: var(--accent); font-weight: 600; }
+
+    .page { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    .page-title { font-size: 20px; font-weight: 700; margin: 0 0 20px; }
+
+    .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+    @media (max-width: 700px) { .stat-row { grid-template-columns: repeat(2, 1fr); } }
+    .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 16px 18px; }
+    .stat-num { font-size: 26px; font-weight: 800; color: var(--text); }
+    .stat-label { color: var(--text-faint); font-size: 12px; font-weight: 600; margin-top: 4px; }
+
+    .panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 20px; margin-bottom: 20px; }
+    .panel h2 { font-size: 14px; margin: 0 0 16px; }
+
+    .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 12.5px; }
+    .bar-label { width: 110px; flex-shrink: 0; color: var(--text-muted); }
+    .bar-track { flex: 1; background: var(--surface-2); border-radius: 6px; height: 16px; overflow: hidden; }
+    .bar-fill { height: 100%; background: var(--accent); border-radius: 6px; }
+    .bar-count { width: 32px; text-align: right; color: var(--text-faint); font-weight: 600; flex-shrink: 0; }
+
+    .trend-chart { display: flex; align-items: flex-end; gap: 6px; height: 120px; }
+    .trend-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+    .trend-bar { width: 100%; background: var(--accent); border-radius: 4px 4px 0 0; min-height: 2px; }
+    .trend-date { font-size: 9.5px; color: var(--text-faint); margin-top: 6px; writing-mode: vertical-rl; transform: rotate(180deg); height: 42px; }
+
+    .empty { color: var(--text-faint); font-size: 13px; text-align: center; padding: 20px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo-mark">R</div>
+    <div class="brand">RequestHub <span class="org">/ ${escapeHtml(customerSlug)} analytics</span></div>
+    <nav class="nav-right">
+      ${isOwner ? `<a class="owner-link" href="/owner">&larr; Owner console</a>` : ""}
+      <a href="/b/${encodeURIComponent(customerSlug)}/admin">&larr; Back to triage</a>
+      <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
+      <a class="logout" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
+    </nav>
+  </div>
+
+  <div class="page">
+    <h1 class="page-title">Analytics</h1>
+    <div class="stat-row" id="statRow">
+      <div class="stat-card"><div class="stat-num">-</div><div class="stat-label">Total ideas</div></div>
+      <div class="stat-card"><div class="stat-num">-</div><div class="stat-label">Total votes</div></div>
+      <div class="stat-card"><div class="stat-num">-</div><div class="stat-label">Total comments</div></div>
+      <div class="stat-card"><div class="stat-num">-</div><div class="stat-label">Avg votes / idea</div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Submissions, last 14 days</h2>
+      <div id="trendChart" class="trend-chart"></div>
+    </div>
+
+    <div class="panel">
+      <h2>By status</h2>
+      <div id="statusBars"></div>
+    </div>
+
+    <div class="panel">
+      <h2>By category</h2>
+      <div id="categoryBars"></div>
+    </div>
+  </div>
+
+  <script>
+    var customerSlug = ${JSON.stringify(customerSlug)};
+    var STATUS_LABELS = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped", declined: "Declined" };
+
+    function escapeHtml(s) {
+      var d = document.createElement('div');
+      d.innerText = s || '';
+      return d.innerHTML;
+    }
+
+    function renderBars(container, rows, total) {
+      if (!rows.length) {
+        container.innerHTML = '<div class="empty">No data yet.</div>';
+        return;
+      }
+      var max = Math.max.apply(null, rows.map(function (r) { return r.count; }).concat([1]));
+      container.innerHTML = rows.map(function (r) {
+        var pct = Math.round((r.count / max) * 100);
+        return '<div class="bar-row">' +
+          '<div class="bar-label">' + escapeHtml(r.label) + '</div>' +
+          '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%"></div></div>' +
+          '<div class="bar-count">' + r.count + '</div>' +
+          '</div>';
+      }).join('');
+    }
+
+    function renderTrend(container, trend) {
+      if (!trend.length) {
+        container.innerHTML = '<div class="empty">No data yet.</div>';
+        return;
+      }
+      var max = Math.max.apply(null, trend.map(function (t) { return t.count; }).concat([1]));
+      container.innerHTML = trend.map(function (t) {
+        var pct = Math.max(Math.round((t.count / max) * 100), t.count > 0 ? 6 : 1);
+        var d = new Date(t.date + 'T00:00:00');
+        var label = (d.getMonth() + 1) + '/' + d.getDate();
+        return '<div class="trend-bar-wrap" title="' + t.date + ': ' + t.count + '">' +
+          '<div class="trend-bar" style="height:' + pct + '%"></div>' +
+          '<div class="trend-date">' + label + '</div>' +
+          '</div>';
+      }).join('');
+    }
+
+    fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/stats')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) return;
+        var cards = document.querySelectorAll('#statRow .stat-num');
+        cards[0].textContent = d.totalIdeas;
+        cards[1].textContent = d.totalVotes;
+        cards[2].textContent = d.totalComments;
+        cards[3].textContent = d.avgVotesPerIdea;
+
+        renderTrend(document.getElementById('trendChart'), d.submissionTrend || []);
+
+        var statusRows = Object.keys(d.byStatus || {}).map(function (key) {
+          return { label: STATUS_LABELS[key] || key, count: d.byStatus[key] };
+        }).sort(function (a, b) { return b.count - a.count; });
+        renderBars(document.getElementById('statusBars'), statusRows, d.totalIdeas);
+
+        var categoryRows = (d.byCategory || []).map(function (c) {
+          return { label: c.category, count: c.count };
+        });
+        renderBars(document.getElementById('categoryBars'), categoryRows, d.totalIdeas);
+      });
   </script>
 </body>
 </html>`;
@@ -3917,6 +4072,33 @@ export default {
         });
       }
       return html(adminPage(customerSlug, isOwner));
+    }
+
+    const analyticsMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/analytics\/?$/);
+    if (request.method === "GET" && analyticsMatch) {
+      const customerSlug = analyticsMatch[1];
+      const isOwner = await requireAuth(request, env, OWNER_SLUG);
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: `/b/${encodeURIComponent(customerSlug)}/login` },
+        });
+      }
+      return html(analyticsPage(customerSlug, isOwner));
+    }
+
+    const statsMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/stats$/);
+    if (request.method === "GET" && statsMatch) {
+      const customerSlug = statsMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      try {
+        const data = await callWorkflow(env, GET_BOARD_STATS_WORKFLOW_ID, { customerSlug });
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
     }
 
     const billingMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/billing\/?$/);

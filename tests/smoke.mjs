@@ -211,6 +211,14 @@ async function run() {
     const r = await fetch(BASE_URL + "/b/" + CUSTOMER + "/admin", { redirect: "manual" });
     assert(r.status === 302, "status " + r.status + " (expected a redirect to login)");
   });
+  await check("analytics page redirects to login", async () => {
+    const r = await fetch(BASE_URL + "/b/" + CUSTOMER + "/analytics", { redirect: "manual" });
+    assert(r.status === 302, "status " + r.status + " (expected a redirect to login)");
+  });
+  await check("stats API requires auth", async () => {
+    const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/stats");
+    assert(r.status === 401, "status " + r.status);
+  });
   await check("settings page redirects to login", async () => {
     const r = await fetch(BASE_URL + "/b/" + CUSTOMER + "/settings", { redirect: "manual" });
     assert(r.status === 302, "status " + r.status);
