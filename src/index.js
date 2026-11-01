@@ -1718,6 +1718,9 @@ function boardPage(customerSlug, isOwner) {
       background: var(--card); border-bottom: 1px solid var(--border);
       padding: 0 24px; display: flex; align-items: center; gap: 4px; height: 56px;
     }
+    @media (max-width: 600px) {
+      .topbar { flex-wrap: wrap; height: auto; padding: 10px 16px; }
+    }
     .logo-mark {
       width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: #fff;
       display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0;
@@ -1851,6 +1854,7 @@ function boardPage(customerSlug, isOwner) {
     }
     .field textarea { resize: vertical; min-height: 60px; }
     .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 480px) { .row-2 { grid-template-columns: 1fr; } }
     .btn-submit {
       background: var(--accent); color: #fff; border: none; padding: 10px 18px; border-radius: var(--radius-btn);
       font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit; margin-top: 4px;
@@ -2359,6 +2363,9 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
   <style>
     ${DESIGN_TOKENS}
     .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; align-items: center; gap: 4px; height: 56px; }
+    @media (max-width: 600px) {
+      .topbar { flex-wrap: wrap; height: auto; padding: 10px 16px; }
+    }
     .logo-mark { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
     .brand { font-weight: 700; font-size: 14px; margin-right: 14px; }
     .nav-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
@@ -2832,6 +2839,9 @@ function roadmapPage(customerSlug, isOwner) {
       background: var(--card); border-bottom: 1px solid var(--border);
       padding: 0 24px; display: flex; align-items: center; gap: 4px; height: 56px;
     }
+    @media (max-width: 600px) {
+      .topbar { flex-wrap: wrap; height: auto; padding: 10px 16px; }
+    }
     .logo-mark { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
     .brand { font-weight: 700; font-size: 14px; margin-right: 14px; }
     .top-tab { color: var(--text-muted); text-decoration: none; font-size: 13.5px; font-weight: 600; padding: 8px 12px; border-radius: 8px; }
@@ -2983,6 +2993,9 @@ function changelogPage(customerSlug, isOwner) {
     .topbar {
       background: var(--card); border-bottom: 1px solid var(--border);
       padding: 0 24px; display: flex; align-items: center; gap: 4px; height: 56px;
+    }
+    @media (max-width: 600px) {
+      .topbar { flex-wrap: wrap; height: auto; padding: 10px 16px; }
     }
     .logo-mark { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
     .brand { font-weight: 700; font-size: 14px; margin-right: 14px; }
