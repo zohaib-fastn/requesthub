@@ -277,6 +277,28 @@ async function run() {
     const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/webhook-deliveries/1/redeliver", { method: "POST" });
     assert(r.status === 401, "status " + r.status);
   });
+  await check("api-key status requires auth", async () => {
+    const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/api-key");
+    assert(r.status === 401, "status " + r.status);
+  });
+  await check("partner API v1 rejects missing auth", async () => {
+    const r = await fetch(BASE_URL + "/api/v1/ideas");
+    const body = await r.json();
+    assert(r.status === 401, "status " + r.status);
+    assert(body.ok === false, "expected ok:false");
+  });
+  await check("partner API v1 rejects an invalid key", async () => {
+    const r = await fetch(BASE_URL + "/api/v1/ideas", {
+      headers: { Authorization: "Bearer rhk_" + "0".repeat(64) },
+    });
+    assert(r.status === 401, "status " + r.status);
+  });
+  await check("partner API v1 rejects a malformed Authorization header", async () => {
+    const r = await fetch(BASE_URL + "/api/v1/ideas", {
+      headers: { Authorization: "Bearer not-a-real-key-format" },
+    });
+    assert(r.status === 401, "status " + r.status);
+  });
   await check("CSV export requires auth", async () => {
     const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/export.csv");
     assert(r.status === 401, "status " + r.status);

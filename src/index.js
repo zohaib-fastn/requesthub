@@ -36,6 +36,9 @@ const LIST_CHANGELOG_WORKFLOW_ID = "wf_69d695b3974e";
 const GET_BOARD_STATS_WORKFLOW_ID = "wf_4146c0839e38";
 const SET_IDEA_PINNED_WORKFLOW_ID = "wf_50b43c697fb7";
 const LIST_SEARCHABLE_COMMENTS_WORKFLOW_ID = "wf_8a542072003b";
+const SET_API_KEY_WORKFLOW_ID = "wf_b1a39a7eb739";
+const GET_API_KEY_STATUS_WORKFLOW_ID = "wf_28d8c655572b";
+const FIND_CUSTOMER_BY_API_KEY_HASH_WORKFLOW_ID = "wf_0931d09170dc";
 const OWNER_SLUG = "__owner__";
 
 // Bidirectional: a Linear state change updates the matching idea's status in
@@ -401,6 +404,28 @@ function getOrCreateVoterKey(request) {
 async function requireAuth(request, env, customerSlug) {
   const token = getCookie(request, sessionCookieName(customerSlug));
   return verifySessionToken(env, token, customerSlug);
+}
+
+async function sha256Hex(text) {
+  return toHex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
+}
+
+// Partner-API auth: a tenant's key is a high-entropy random token, hashed
+// with a plain unsalted SHA-256 (unlike the admin password, which needs a
+// salt against offline guessing - this token is never guessable, so the
+// hash only needs to not leak the plaintext if the DB is read). Returns the
+// owning customerSlug, or null if the header is missing/malformed/unknown.
+async function requireApiKey(request, env) {
+  const auth = request.headers.get("authorization") || "";
+  const match = auth.match(/^Bearer\s+(rhk_[a-f0-9]{64})$/i);
+  if (!match) return null;
+  const keyHash = await sha256Hex(match[1].toLowerCase());
+  try {
+    const data = await callWorkflow(env, FIND_CUSTOMER_BY_API_KEY_HASH_WORKFLOW_ID, { keyHash });
+    return data?.customerSlug || null;
+  } catch {
+    return null;
+  }
 }
 
 async function mintEmbedToken(env, endOrgId, customerSlug) {
@@ -1142,6 +1167,13 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
     </div>
 
     <div class="card">
+      <h2>API access</h2>
+      <p class="hint">Call RequestHub from your own backend instead of (or alongside) the embed widget - list ideas, create one, or update a status. One active key per board; generating a new one revokes the old.</p>
+      <div id="apiKeyStatus"><p class="hint">Loading...</p></div>
+      <p class="hint" style="margin-top: 10px;"><code style="background:none;border:none;padding:0;display:inline;">GET/POST ${escapeHtml(baseUrl)}/api/v1/ideas</code>, <code style="background:none;border:none;padding:0;display:inline;">GET ${escapeHtml(baseUrl)}/api/v1/ideas/:id</code>, <code style="background:none;border:none;padding:0;display:inline;">POST ${escapeHtml(baseUrl)}/api/v1/ideas/:id/status</code> - send your key as <code style="background:none;border:none;padding:0;display:inline;">Authorization: Bearer rhk_...</code>.</p>
+    </div>
+
+    <div class="card">
       <h2>Team</h2>
       <p class="hint">Invite teammates to sign in with their own email instead of sharing the admin password. Anyone invited gets full admin access, same as the shared password.</p>
       <div id="teamList"></div>
@@ -1469,6 +1501,61 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
         });
     }
     loadWebhooks();
+
+    function loadApiKeyStatus() {
+      var container = document.getElementById('apiKeyStatus');
+      fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/api-key')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok) {
+            container.innerHTML = '<p class="hint">Could not load API key status.</p>';
+            return;
+          }
+          if (!d.hasKey) {
+            container.innerHTML = '<button type="button" class="btn-copy" id="generateApiKeyBtn">Generate API key</button>';
+          } else {
+            var created = d.createdAt ? new Date(d.createdAt).toLocaleDateString() : 'unknown date';
+            container.innerHTML = '<div class="team-row"><span>' + d.keyPrefix + '<br/><span style="color:var(--text-faint);font-size:11px;">Created ' + created + '</span></span>' +
+              '<span><button type="button" class="btn-copy" id="generateApiKeyBtn" style="margin-right:6px;">Regenerate</button>' +
+              '<button type="button" class="btn-remove" id="revokeApiKeyBtn">Revoke</button></span></div>';
+          }
+          wireApiKeyButtons();
+        });
+    }
+
+    function wireApiKeyButtons() {
+      var genBtn = document.getElementById('generateApiKeyBtn');
+      var revokeBtn = document.getElementById('revokeApiKeyBtn');
+      if (genBtn) {
+        genBtn.addEventListener('click', function () {
+          var confirmMsg = revokeBtn ? 'This revokes the existing key immediately - anything using it will stop working. Continue?' : null;
+          if (confirmMsg && !window.confirm(confirmMsg)) return;
+          fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/api-key', { method: 'POST' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (!d.ok) { alert(d.error || 'Could not generate a key.'); return; }
+              document.getElementById('apiKeyStatus').innerHTML =
+                '<p class="hint" style="color:var(--good);"><strong>Your API key (shown once, copy it now):</strong></p>' +
+                '<div class="embed-code"><code>' + d.apiKey + '</code><button type="button" class="btn-copy" id="copyApiKeyBtn">Copy</button></div>';
+              document.getElementById('copyApiKeyBtn').addEventListener('click', function () {
+                var btn = this;
+                navigator.clipboard.writeText(d.apiKey).then(function () {
+                  btn.textContent = 'Copied!';
+                  setTimeout(function () { loadApiKeyStatus(); }, 1500);
+                });
+              });
+            });
+        });
+      }
+      if (revokeBtn) {
+        revokeBtn.addEventListener('click', function () {
+          if (!window.confirm('Revoke this API key? Anything using it will stop working immediately.')) return;
+          fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/api-key', { method: 'DELETE' })
+            .then(function () { loadApiKeyStatus(); });
+        });
+      }
+    }
+    loadApiKeyStatus();
 
     document.getElementById('addWebhookBtn').addEventListener('click', function () {
       var input = document.getElementById('webhookUrl');
@@ -4750,6 +4837,47 @@ export default {
       }
     }
 
+    const apiKeyMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/api-key$/);
+    if (request.method === "GET" && apiKeyMatch) {
+      const customerSlug = apiKeyMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      try {
+        const data = await callWorkflow(env, GET_API_KEY_STATUS_WORKFLOW_ID, { customerSlug });
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+    if (request.method === "POST" && apiKeyMatch) {
+      const customerSlug = apiKeyMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      try {
+        const rawKey = "rhk_" + toHex(crypto.getRandomValues(new Uint8Array(32)));
+        const keyHash = await sha256Hex(rawKey);
+        const keyPrefix = rawKey.slice(0, 12) + "...";
+        await callWorkflow(env, SET_API_KEY_WORKFLOW_ID, { customerSlug, keyHash, keyPrefix });
+        return json({ ok: true, apiKey: rawKey, keyPrefix });
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+    if (request.method === "DELETE" && apiKeyMatch) {
+      const customerSlug = apiKeyMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      try {
+        await callWorkflow(env, SET_API_KEY_WORKFLOW_ID, { customerSlug, keyHash: "", keyPrefix: "" });
+        return json({ ok: true });
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
     const linearWebhookMatch = url.pathname.match(/^\/api\/webhooks\/linear\/([a-z0-9-]+)$/);
     if (request.method === "POST" && linearWebhookMatch) {
       const customerSlug = linearWebhookMatch[1];
@@ -5118,6 +5246,123 @@ export default {
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
       }
+    }
+
+    // Partner API (v1) - authenticated with a per-tenant Bearer API key
+    // instead of the admin session cookie, so a customer's own backend can
+    // integrate without a human logging in. The tenant is derived entirely
+    // from the key; a caller can never act on a customerSlug other than its
+    // own, unlike the session-cookie routes above which take it as a param.
+    if (url.pathname.startsWith("/api/v1/")) {
+      const apiCustomerSlug = await requireApiKey(request, env);
+      if (!apiCustomerSlug) {
+        return json({ ok: false, error: "invalid or missing API key - use 'Authorization: Bearer rhk_...'" }, 401);
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/v1/ideas") {
+        try {
+          const data = await callWorkflow(env, LIST_WORKFLOW_ID, { customerSlug: apiCustomerSlug });
+          return json(data);
+        } catch (err) {
+          return json({ ok: false, error: err.message }, 502);
+        }
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/v1/ideas") {
+        let body;
+        try {
+          body = await request.json();
+        } catch {
+          return json({ ok: false, error: "invalid JSON body" }, 400);
+        }
+        if (!body.title) {
+          return json({ ok: false, error: "title is required" }, 400);
+        }
+        try {
+          const endOrgId = await getTenantOrgId(env, apiCustomerSlug);
+          let slackChannel;
+          try {
+            const settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug: apiCustomerSlug });
+            slackChannel = settings?.slackChannel || undefined;
+          } catch {}
+          const data = await callWorkflow(
+            env,
+            SUBMIT_WORKFLOW_ID,
+            {
+              customerSlug: apiCustomerSlug,
+              title: body.title,
+              description: body.description || "",
+              category: body.category || "Feature",
+              submitterEmail: body.submitterEmail || "",
+              ...(slackChannel ? { slackChannel } : {}),
+            },
+            endOrgId
+          );
+          if (data?.idea) {
+            deliverWebhooks(env, ctx, apiCustomerSlug, "idea.created", data.idea);
+          }
+          return json(data);
+        } catch (err) {
+          return json({ ok: false, error: err.message }, 502);
+        }
+      }
+
+      const apiIdeaMatch = url.pathname.match(/^\/api\/v1\/ideas\/(\d+)$/);
+      if (request.method === "GET" && apiIdeaMatch) {
+        try {
+          const data = await callWorkflow(env, LIST_WORKFLOW_ID, { customerSlug: apiCustomerSlug });
+          const idea = (data?.ideas || []).find((i) => i.id === Number(apiIdeaMatch[1]));
+          if (!idea) return json({ ok: false, error: "idea not found" }, 404);
+          return json({ ok: true, idea });
+        } catch (err) {
+          return json({ ok: false, error: err.message }, 502);
+        }
+      }
+
+      const apiStatusMatch = url.pathname.match(/^\/api\/v1\/ideas\/(\d+)\/status$/);
+      if (request.method === "POST" && apiStatusMatch) {
+        let body;
+        try {
+          body = await request.json();
+        } catch {
+          return json({ ok: false, error: "invalid JSON body" }, 400);
+        }
+        if (!STATUSES.includes(body.status)) {
+          return json({ ok: false, error: "status must be one of " + STATUSES.join(", ") }, 400);
+        }
+        try {
+          const listData = await callWorkflow(env, LIST_WORKFLOW_ID, { customerSlug: apiCustomerSlug });
+          const belongs = (listData?.ideas || []).some((i) => i.id === Number(apiStatusMatch[1]));
+          if (!belongs) {
+            return json({ ok: false, error: "idea not found for this API key's tenant" }, 404);
+          }
+          const endOrgId = await getTenantOrgId(env, apiCustomerSlug);
+          let settings = {};
+          try {
+            settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug: apiCustomerSlug });
+          } catch {}
+          const data = await callWorkflow(
+            env,
+            UPDATE_STATUS_WORKFLOW_ID,
+            {
+              ideaId: Number(apiStatusMatch[1]),
+              status: body.status,
+              linearTeamId: settings?.linearTeamId || DEFAULT_LINEAR_TEAM_ID,
+              notionPageId: settings?.notionPageId || DEFAULT_NOTION_PAGE_ID,
+              linearStateIds: settings?.linearStateIds || {},
+            },
+            endOrgId
+          );
+          if (data?.idea) {
+            deliverWebhooks(env, ctx, apiCustomerSlug, "idea.status_changed", data.idea);
+          }
+          return json(data);
+        } catch (err) {
+          return json({ ok: false, error: err.message }, 502);
+        }
+      }
+
+      return json({ ok: false, error: "not found" }, 404);
     }
 
     return new Response("Not found", { status: 404 });
