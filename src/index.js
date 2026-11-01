@@ -1117,8 +1117,14 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
 
     <div class="card">
       <h2>Webhooks</h2>
-      <p class="hint">Notify your own systems when an idea is submitted or its status changes. Each delivery is a signed POST - verify it with HMAC-SHA256 over the raw body using the secret shown when you create it (shown once, not stored anywhere you can retrieve again).</p>
+      <p class="hint">Notify your own systems when an idea is submitted, its status changes, or someone comments. Each delivery is a signed POST - verify it with HMAC-SHA256 over the raw body using the secret shown when you create it (shown once, not stored anywhere you can retrieve again).</p>
       <div id="webhookList"></div>
+      <div class="field" style="margin-top: 14px;">
+        <label>Events to send</label>
+        <label class="checkbox-label"><input type="checkbox" id="webhookEventCreated" checked /> Idea submitted (idea.created)</label>
+        <label class="checkbox-label"><input type="checkbox" id="webhookEventStatus" checked /> Status changed (idea.status_changed)</label>
+        <label class="checkbox-label"><input type="checkbox" id="webhookEventComment" checked /> Comment posted (comment.created)</label>
+      </div>
       <div class="team-invite-row">
         <input type="url" id="webhookUrl" placeholder="https://your-system.example.com/webhooks/requesthub" />
         <button type="button" class="btn-copy" id="addWebhookBtn">Add</button>
@@ -1422,10 +1428,14 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
       var note = document.getElementById('webhookNote');
       var url = input.value.trim();
       if (!url) return;
+      var events = [];
+      if (document.getElementById('webhookEventCreated').checked) events.push('idea.created');
+      if (document.getElementById('webhookEventStatus').checked) events.push('idea.status_changed');
+      if (document.getElementById('webhookEventComment').checked) events.push('comment.created');
       fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/webhooks', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ url: url }),
+        body: JSON.stringify({ url: url, events: events }),
       })
         .then(function (r) { return r.json(); })
         .then(function (d) {
@@ -4674,6 +4684,12 @@ export default {
           internal: isTeam && Boolean(body.internal),
           ideaUrl: isTeam ? `${url.origin}/b/${encodeURIComponent(commentCustomerSlug)}/ideas/${commentsMatch[1]}` : "",
         });
+        if (data?.ok && data.comment && !data.comment.internal && data.customerSlug) {
+          deliverWebhooks(env, ctx, data.customerSlug, "comment.created", {
+            ...data.comment,
+            idea_id: Number(commentsMatch[1]),
+          });
+        }
         return json(data);
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
