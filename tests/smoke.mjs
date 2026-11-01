@@ -291,6 +291,19 @@ async function run() {
     });
     assert(r.status === 401, "status " + r.status);
   });
+  await check("merge idea requires auth", async () => {
+    const r = await fetch(BASE_URL + "/api/ideas/" + ideaId + "/merge", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ customerSlug: CUSTOMER, canonicalId: ideaId }),
+    });
+    assert(r.status === 401, "status " + r.status);
+  });
+  await check("merge-status is public and reports an unmerged idea", async () => {
+    const r = await fetch(BASE_URL + "/api/ideas/" + ideaId + "/merge-status?customer=" + CUSTOMER);
+    const d = await r.json();
+    assert(r.status === 200 && d.ok && d.idea && d.idea.mergedInto === null, JSON.stringify(d));
+  });
   await check("webhooks list requires auth", async () => {
     const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/webhooks");
     assert(r.status === 401, "status " + r.status);

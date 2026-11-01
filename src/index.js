@@ -41,6 +41,8 @@ const GET_API_KEY_STATUS_WORKFLOW_ID = "wf_28d8c655572b";
 const FIND_CUSTOMER_BY_API_KEY_HASH_WORKFLOW_ID = "wf_0931d09170dc";
 const SUBSCRIBE_TO_IDEA_WORKFLOW_ID = "wf_0da569772406";
 const UNSUBSCRIBE_FROM_IDEA_WORKFLOW_ID = "wf_e9c4ba6a2a89";
+const MERGE_IDEAS_WORKFLOW_ID = "wf_6892767f2392";
+const GET_IDEA_RAW_WORKFLOW_ID = "wf_9de7b9762be9";
 const OWNER_SLUG = "__owner__";
 
 // Bidirectional: a Linear state change updates the matching idea's status in
@@ -2613,7 +2615,20 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
           if (d.statusLabels) statusLabels = d.statusLabels;
           var idea = (d.ideas || []).find(function (i) { return String(i.id) === ideaId; });
           if (!idea) {
-            document.getElementById('page').innerHTML = '<div class="not-found">This idea doesn\\'t exist or was removed.</div>';
+            fetch('/api/ideas/' + ideaId + '/merge-status?customer=' + encodeURIComponent(customerSlug))
+              .then(function (r) { return r.json(); })
+              .then(function (m) {
+                if (m.ok && m.idea && m.idea.mergedInto) {
+                  document.getElementById('page').innerHTML =
+                    '<div class="not-found">This idea was merged into <a href="/b/' + encodeURIComponent(customerSlug) + '/ideas/' + m.idea.mergedInto.id + '">' +
+                    escapeHtml(m.idea.mergedInto.title) + '</a>.</div>';
+                } else {
+                  document.getElementById('page').innerHTML = '<div class="not-found">This idea doesn\\'t exist or was removed.</div>';
+                }
+              })
+              .catch(function () {
+                document.getElementById('page').innerHTML = '<div class="not-found">This idea doesn\\'t exist or was removed.</div>';
+              });
             return;
           }
           renderIdea(idea);
@@ -3048,6 +3063,7 @@ function adminPage(customerSlug, isOwner) {
     }
     .bulk-apply-btn { background: var(--accent); color: #fff; }
     .bulk-delete-btn { background: var(--bad-tint); color: var(--bad); }
+    .bulk-merge-btn { background: var(--info-tint); color: var(--info); }
     .bulk-clear-btn { background: none; color: var(--text-muted); margin-left: auto; }
 
     .empty { color: var(--text-faint); font-size: 13.5px; text-align: center; padding: 40px 16px; }
@@ -3128,6 +3144,7 @@ function adminPage(customerSlug, isOwner) {
       <span id="bulkCount">0 selected</span>
       <select id="bulkStatus"></select>
       <button type="button" class="bulk-apply-btn" id="bulkApplyBtn">Change status</button>
+      <button type="button" class="bulk-merge-btn" id="bulkMergeBtn" style="display:none;" title="Pick the two selected ideas to merge as duplicates">Merge as duplicates</button>
       <button type="button" class="bulk-delete-btn" id="bulkDeleteBtn">Delete</button>
       <button type="button" class="bulk-clear-btn" id="bulkClearBtn">Clear selection</button>
     </div>
@@ -3189,6 +3206,7 @@ function adminPage(customerSlug, isOwner) {
       const bar = document.getElementById('bulkBar');
       document.getElementById('bulkCount').textContent = selectedIds.size + ' selected';
       bar.classList.toggle('open', selectedIds.size > 0);
+      document.getElementById('bulkMergeBtn').style.display = selectedIds.size === 2 ? '' : 'none';
     }
 
     document.getElementById('bulkApplyBtn').addEventListener('click', function () {
@@ -3199,6 +3217,34 @@ function adminPage(customerSlug, isOwner) {
         selectedIds.clear();
         load();
       });
+    });
+
+    document.getElementById('bulkMergeBtn').addEventListener('click', function () {
+      const ids = Array.from(selectedIds);
+      if (ids.length !== 2) return;
+      const a = allIdeas.find(function (i) { return i.id === ids[0]; });
+      const b = allIdeas.find(function (i) { return i.id === ids[1]; });
+      if (!a || !b) return;
+      const canon = a.votes !== b.votes ? (a.votes > b.votes ? a : b) : (a.id < b.id ? a : b);
+      const dup = canon === a ? b : a;
+      if (!window.confirm(
+        '"' + dup.title + '" will be merged into "' + canon.title + '".\\n\\n' +
+        'Votes, comments and subscribers move to the kept idea; the duplicate is hidden from the board but its link still redirects here. This cannot be undone. Continue?'
+      )) return;
+      fetch('/api/ideas/' + dup.id + '/merge', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ customerSlug: customerSlug, canonicalId: canon.id }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok) {
+            alert(d.error || 'Could not merge these ideas right now.');
+            return;
+          }
+          selectedIds.clear();
+          load();
+        });
     });
 
     document.getElementById('bulkDeleteBtn').addEventListener('click', function () {
@@ -5371,6 +5417,60 @@ export default {
         const data = await callWorkflow(env, SET_IDEA_PINNED_WORKFLOW_ID, {
           ideaId: Number(pinMatch[1]),
           pinned: Boolean(body.pinned),
+        });
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
+    const mergeMatch = url.pathname.match(/^\/api\/ideas\/(\d+)\/merge$/);
+    if (request.method === "POST" && mergeMatch) {
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ ok: false, error: "invalid JSON body" }, 400);
+      }
+      const mergeCustomerSlug = (body.customerSlug || "").trim();
+      const canonicalId = Number(body.canonicalId);
+      if (!mergeCustomerSlug) {
+        return json({ ok: false, error: "customerSlug is required" }, 400);
+      }
+      if (!canonicalId) {
+        return json({ ok: false, error: "canonicalId is required" }, 400);
+      }
+      if (!(await requireAuth(request, env, mergeCustomerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      try {
+        const duplicateId = Number(mergeMatch[1]);
+        const listData = await callWorkflow(env, LIST_WORKFLOW_ID, { customerSlug: mergeCustomerSlug });
+        const ids = new Set((listData?.ideas || []).map((i) => i.id));
+        if (!ids.has(duplicateId) || !ids.has(canonicalId)) {
+          return json({ ok: false, error: "both ideas must belong to this customer" }, 404);
+        }
+        const data = await callWorkflow(env, MERGE_IDEAS_WORKFLOW_ID, {
+          duplicateId,
+          canonicalId,
+          customerSlug: mergeCustomerSlug,
+        });
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
+    const mergeStatusMatch = url.pathname.match(/^\/api\/ideas\/(\d+)\/merge-status$/);
+    if (request.method === "GET" && mergeStatusMatch) {
+      const mergeStatusCustomerSlug = (url.searchParams.get("customer") || "").trim();
+      if (!mergeStatusCustomerSlug) {
+        return json({ ok: false, error: "customer is required" }, 400);
+      }
+      try {
+        const data = await callWorkflow(env, GET_IDEA_RAW_WORKFLOW_ID, {
+          ideaId: Number(mergeStatusMatch[1]),
+          customerSlug: mergeStatusCustomerSlug,
         });
         return json(data);
       } catch (err) {
