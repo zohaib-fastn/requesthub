@@ -128,6 +128,19 @@ async function run() {
     assert(body.ok === true, "custom-category submit failed: " + JSON.stringify(body));
     assert(body.idea.category === "Smoke Test Category", "category not stored as submitted");
   });
+  await check("submit idea rejects a submitterEmail containing CRLF (email header injection)", async () => {
+    const r = await fetch(BASE_URL + "/api/ideas", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        customerSlug: CUSTOMER,
+        title: "[smoke-test] crlf-injection-regression-check " + Date.now(),
+        submitterEmail: "attacker@example.com\r\nBcc: victim@example.com",
+      }),
+    });
+    const body = await r.json();
+    assert(r.status === 200 && body.ok === false, "expected a clean rejection, got: " + JSON.stringify(body));
+  });
   await check("submit idea with tags normalizes, dedupes, and caps at 5", async () => {
     const r = await fetch(BASE_URL + "/api/ideas", {
       method: "POST",
