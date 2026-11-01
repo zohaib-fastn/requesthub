@@ -777,8 +777,8 @@ function signupPage(errorMsg) {
 </html>`;
 }
 
-function signupDonePage(customerSlug) {
-  const base = "https://requesthub.zohaib-iot.workers.dev";
+function signupDonePage(customerSlug, baseUrl) {
+  const base = baseUrl || "https://requesthub.zohaib-iot.workers.dev";
   return `<!doctype html>
 <html>
 <head>
@@ -857,7 +857,7 @@ function connectPage(customerSlug, endOrgId, token, setupLinks, isOwner) {
   <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
-    .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
     .brand { font-weight: 700; font-size: 15px; }
     .nav-right { margin-left: auto; display: flex; align-items: center; gap: 18px; }
@@ -901,10 +901,10 @@ function connectPage(customerSlug, endOrgId, token, setupLinks, isOwner) {
     <div class="logo-mark">R</div>
     <div class="brand">RequestHub</div>
     <nav class="nav-right">
-      <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
       ${isOwner ? `<a class="owner-link" href="/owner">&larr; Owner console</a>` : ""}
       <a href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
       <a href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
+      <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
       <a class="logout" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
     </nav>
   </div>
@@ -918,9 +918,32 @@ function connectPage(customerSlug, endOrgId, token, setupLinks, isOwner) {
 
     <div class="section-label">Connection status</div>
     <div class="frame-wrap">
-      <iframe src="${FASTN_BASE}/api/v1/embed/iframe?token=${encodeURIComponent(token)}&org-id=${encodeURIComponent(endOrgId)}&theme=light" allow="clipboard-write"></iframe>
+      <iframe id="connectFrame" src="${FASTN_BASE}/api/v1/embed/iframe?token=${encodeURIComponent(token)}&org-id=${encodeURIComponent(endOrgId)}&theme=light" allow="clipboard-write"></iframe>
     </div>
   </div>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      // THEME_TOGGLE_SCRIPT (in <head>) already applied the right data-theme
+      // attribute by this point - this iframe is a separate origin and can't
+      // read our CSS variables, so it needs its own theme param kept in sync,
+      // both on load and whenever the toggle flips.
+      var iframe = document.getElementById('connectFrame');
+      var toggle = document.getElementById('themeToggle');
+      function isDarkNow() {
+        var attr = document.documentElement.getAttribute('data-theme');
+        return attr === 'dark' || (!attr && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      }
+      function syncFrameTheme() {
+        try {
+          var u = new URL(iframe.src);
+          u.searchParams.set('theme', isDarkNow() ? 'dark' : 'light');
+          if (iframe.src !== u.toString()) iframe.src = u.toString();
+        } catch {}
+      }
+      syncFrameTheme();
+      if (toggle) toggle.addEventListener('click', function () { setTimeout(syncFrameTheme, 0); });
+    });
+  </script>
 </body>
 </html>`;
 }
@@ -937,7 +960,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
   <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
-    .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
     .brand { font-weight: 700; font-size: 15px; }
     .nav-right { margin-left: auto; display: flex; align-items: center; gap: 18px; }
@@ -999,9 +1022,12 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
     <div class="logo-mark">R</div>
     <div class="brand">RequestHub</div>
     <nav class="nav-right">
-      <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
       ${isOwner ? `<a class="owner-link" href="/owner">&larr; Owner console</a>` : ""}
       <a href="/b/${encodeURIComponent(customerSlug)}/admin">&larr; Back to triage</a>
+      <a href="/b/${encodeURIComponent(customerSlug)}/analytics">Analytics</a>
+      <a href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
+      <a href="/b/${encodeURIComponent(customerSlug)}/billing">Billing</a>
+      <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
       <a class="logout" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
     </nav>
   </div>
@@ -1745,7 +1771,7 @@ function boardPage(customerSlug, isOwner) {
           <form id="submit-form">
             <div class="field">
               <label>What's your idea, bug, or feedback?</label>
-              <input id="title" required maxlength="200" placeholder="e.g. Add dark mode" />
+              <input id="title" required maxlength="200" placeholder="e.g. Export data as CSV" />
             </div>
             <div class="field">
               <label>More detail (optional)</label>
@@ -1765,7 +1791,7 @@ function boardPage(customerSlug, isOwner) {
                 <input id="submitterEmail" type="email" placeholder="you@example.com" />
               </div>
             </div>
-            <button type="submit" class="btn-submit">Submit</button>
+            <button type="submit" class="btn-submit" id="submitFormBtn">Submit</button>
             <button type="button" class="btn-cancel" id="cancelFormBtn">Cancel</button>
           </form>
         </div>
@@ -2083,6 +2109,10 @@ function boardPage(customerSlug, isOwner) {
           populateCategorySelect();
           populateStatusFilter();
           render();
+        })
+        .catch(function () {
+          document.getElementById('list').innerHTML =
+            '<div class="empty">Could not load feedback right now. <a href="#" onclick="location.reload();return false;">Retry</a></div>';
         });
     }
 
@@ -2132,6 +2162,9 @@ function boardPage(customerSlug, isOwner) {
       const category = document.getElementById('category').value;
       const submitterEmail = document.getElementById('submitterEmail').value.trim();
       if (!title) return;
+      const submitBtn = document.getElementById('submitFormBtn');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Submitting...';
       fetch('/api/ideas', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -2144,6 +2177,13 @@ function boardPage(customerSlug, isOwner) {
           document.getElementById('submitterEmail').value = '';
           document.getElementById('formCard').classList.remove('open');
           load();
+        })
+        .catch(function () {
+          alert('Could not submit your feedback right now - please try again.');
+        })
+        .finally(function () {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Submit';
         });
     });
 
@@ -2425,6 +2465,10 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
             return;
           }
           renderIdea(idea);
+        })
+        .catch(function () {
+          document.getElementById('page').innerHTML =
+            '<div class="not-found">Could not load this idea right now. <a href="#" onclick="location.reload();return false;">Retry</a></div>';
         });
     }
 
@@ -2458,7 +2502,7 @@ function billingPage(customerSlug, currentPlan, isOwner) {
   <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
-    .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
     .brand { font-weight: 700; font-size: 15px; }
     .brand .org { color: var(--text-faint); font-weight: 500; }
@@ -2506,9 +2550,12 @@ function billingPage(customerSlug, currentPlan, isOwner) {
     <div class="logo-mark">R</div>
     <div class="brand">RequestHub <span class="org">/ ${escapeHtml(customerSlug)} billing</span></div>
     <nav class="nav-right">
-      <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
       ${isOwner ? `<a class="owner-link" href="/owner">&larr; Owner console</a>` : ""}
       <a href="/b/${encodeURIComponent(customerSlug)}/admin">&larr; Back to triage</a>
+      <a href="/b/${encodeURIComponent(customerSlug)}/analytics">Analytics</a>
+      <a href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
+      <a href="/b/${encodeURIComponent(customerSlug)}/billing">Billing</a>
+      <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
       <a class="logout" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
     </nav>
   </div>
@@ -2596,6 +2643,8 @@ function roadmapPage(customerSlug, isOwner) {
     .vote-box .icon { width: 12px; height: 12px; }
     .vote-box .vote-num { font-size: 12px; font-weight: 700; color: var(--text); }
     .empty-col { color: var(--text-faint); font-size: 12px; padding: 10px 2px; }
+    .empty { color: var(--text-faint); font-size: 13.5px; text-align: center; padding: 40px 16px; }
+    .empty a { color: var(--accent); }
   </style>
 </head>
 <body>
@@ -2614,7 +2663,7 @@ function roadmapPage(customerSlug, isOwner) {
 
   <div class="page">
     <h1 class="page-title">Roadmap</h1>
-    <div class="board" id="board"></div>
+    <div class="board" id="board"><div class="empty">Loading...</div></div>
   </div>
 
   <script>
@@ -2678,7 +2727,11 @@ function roadmapPage(customerSlug, isOwner) {
 
     fetch('/api/ideas?customer=' + encodeURIComponent(customerSlug))
       .then(function (r) { return r.json(); })
-      .then(function (d) { render(d.ideas || [], d.statusLabels, d.hiddenRoadmapStatuses); });
+      .then(function (d) { render(d.ideas || [], d.statusLabels, d.hiddenRoadmapStatuses); })
+      .catch(function () {
+        document.getElementById('board').innerHTML =
+          '<div class="empty">Could not load the roadmap right now. <a href="#" onclick="location.reload();return false;">Retry</a></div>';
+      });
   </script>
 </body>
 </html>`;
@@ -2787,6 +2840,10 @@ function changelogPage(customerSlug, isOwner) {
             '</div>' +
             '</div>';
         }).join('');
+      })
+      .catch(function () {
+        document.getElementById('list').innerHTML =
+          '<div class="empty">Could not load the changelog right now. <a href="#" onclick="location.reload();return false;">Retry</a></div>';
       });
   </script>
 </body>
@@ -2804,11 +2861,11 @@ function adminPage(customerSlug, isOwner) {
   <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
-    .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
     .brand { font-weight: 700; font-size: 15px; }
     .brand .org { color: var(--text-faint); font-weight: 500; }
-    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 16px; }
+    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
     .nav-right a { color: var(--text-muted); font-size: 13px; text-decoration: none; }
     .nav-right a:hover { color: var(--text); }
     .nav-right a.logout { color: var(--bad); }
@@ -2826,7 +2883,7 @@ function adminPage(customerSlug, isOwner) {
     .filters-row select { cursor: pointer; }
 
     .bulk-bar {
-      display: none; align-items: center; gap: 10px; background: var(--accent-tint); border: 1px solid var(--accent);
+      display: none; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--accent-tint); border: 1px solid var(--accent);
       border-radius: 10px; padding: 9px 12px; margin-bottom: 14px; font-size: 13px; color: var(--text);
     }
     .bulk-bar.open { display: flex; }
@@ -3144,6 +3201,10 @@ function adminPage(customerSlug, isOwner) {
           if (d.categories && d.categories.length) { categories = d.categories; populateCategorySelect(); }
           render();
           renderBulkBar();
+        })
+        .catch(function () {
+          document.getElementById('board').innerHTML =
+            '<div class="empty">Could not load the board right now. <a href="#" onclick="location.reload();return false;">Retry</a></div>';
         });
     }
 
@@ -3165,11 +3226,11 @@ function analyticsPage(customerSlug, isOwner) {
   <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
-    .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
     .brand { font-weight: 700; font-size: 15px; }
     .brand .org { color: var(--text-faint); font-weight: 500; }
-    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 16px; }
+    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
     .nav-right a, .nav-right button { color: var(--text-muted); font-size: 13px; text-decoration: none; background: none; border: none; cursor: pointer; font-family: inherit; }
     .nav-right a:hover, .nav-right button:hover { color: var(--text); }
     .nav-right a.owner-link { color: var(--accent); font-weight: 600; }
@@ -3207,6 +3268,9 @@ function analyticsPage(customerSlug, isOwner) {
     <nav class="nav-right">
       ${isOwner ? `<a class="owner-link" href="/owner">&larr; Owner console</a>` : ""}
       <a href="/b/${encodeURIComponent(customerSlug)}/admin">&larr; Back to triage</a>
+      <a href="/b/${encodeURIComponent(customerSlug)}/analytics">Analytics</a>
+      <a href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
+      <a href="/b/${encodeURIComponent(customerSlug)}/billing">Billing</a>
       <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
       <a class="logout" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
     </nav>
@@ -3264,8 +3328,9 @@ function analyticsPage(customerSlug, isOwner) {
     }
 
     function renderTrend(container, trend) {
-      if (!trend.length) {
-        container.innerHTML = '<div class="empty">No data yet.</div>';
+      var totalCount = trend.reduce(function (sum, t) { return sum + t.count; }, 0);
+      if (!trend.length || totalCount === 0) {
+        container.innerHTML = '<div class="empty">Nothing submitted in the last 14 days.</div>';
         return;
       }
       var max = Math.max.apply(null, trend.map(function (t) { return t.count; }).concat([1]));
@@ -3280,10 +3345,18 @@ function analyticsPage(customerSlug, isOwner) {
       }).join('');
     }
 
+    function showStatsError() {
+      document.querySelectorAll('#statRow .stat-num').forEach(function (el) { el.textContent = '-'; });
+      var msg = '<div class="empty">Could not load analytics right now. <a href="#" onclick="location.reload();return false;">Retry</a></div>';
+      document.getElementById('trendChart').innerHTML = msg;
+      document.getElementById('statusBars').innerHTML = msg;
+      document.getElementById('categoryBars').innerHTML = msg;
+    }
+
     fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/stats')
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (!d.ok) return;
+        if (!d.ok) { showStatsError(); return; }
         var cards = document.querySelectorAll('#statRow .stat-num');
         cards[0].textContent = d.totalIdeas;
         cards[1].textContent = d.totalVotes;
@@ -3301,7 +3374,8 @@ function analyticsPage(customerSlug, isOwner) {
           return { label: c.category, count: c.count };
         });
         renderBars(document.getElementById('categoryBars'), categoryRows, d.totalIdeas);
-      });
+      })
+      .catch(showStatsError);
   </script>
 </body>
 </html>`;
@@ -3532,6 +3606,9 @@ function changelogWidgetPage(customerSlug, color) {
         var seen = 0;
         try { seen = Number(localStorage.getItem(SEEN_KEY) || 0); } catch {}
         if (latestShippedAt > seen) document.getElementById('launcher').classList.add('unread');
+      })
+      .catch(function () {
+        document.getElementById('panelBody').innerHTML = '<div class="empty">Could not load - try again shortly.</div>';
       });
   </script>
 </body>
@@ -3867,7 +3944,7 @@ function ownerDashboardPage(customers, errorMsg) {
   ${DESIGN_FONT_LINK}
   <style>
     ${DESIGN_TOKENS}
-    .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
     .brand { font-weight: 700; font-size: 15px; }
     .back { margin-left: auto; color: var(--text-muted); font-size: 13px; text-decoration: none; }
@@ -4030,7 +4107,7 @@ export default {
       if (!customerSlug) {
         return new Response(null, { status: 302, headers: { Location: "/signup" } });
       }
-      return html(signupDonePage(customerSlug));
+      return html(signupDonePage(customerSlug, url.origin));
     }
 
     if (request.method === "POST" && url.pathname === "/api/signup") {
