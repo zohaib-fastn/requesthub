@@ -5734,6 +5734,7 @@ export default {
           duplicateId,
           canonicalId,
           customerSlug: mergeCustomerSlug,
+          baseUrl: url.origin,
         });
         if (data?.ok) {
           deliverWebhooks(env, ctx, mergeCustomerSlug, "idea.merged", {
