@@ -175,6 +175,12 @@ async function run() {
     const body = await r.json();
     assert(body.ok === true, "comment post failed: " + JSON.stringify(body));
   });
+  await check("idea list with includeComments=1 returns a searchable comments map", async () => {
+    const r = await fetch(BASE_URL + "/api/ideas?customer=" + CUSTOMER + "&includeComments=1");
+    const body = await r.json();
+    assert(r.status === 200, "status " + r.status);
+    assert(body.commentsByIdea && typeof body.commentsByIdea === "object", "commentsByIdea missing or not an object");
+  });
   await check("comment appears in list, not flagged internal/team", async () => {
     const r = await fetch(BASE_URL + "/api/ideas/" + ideaId + "/comments");
     const body = await r.json();

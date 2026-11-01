@@ -35,6 +35,7 @@ const LIST_STATUS_HISTORY_WORKFLOW_ID = "wf_144ac631f830";
 const LIST_CHANGELOG_WORKFLOW_ID = "wf_69d695b3974e";
 const GET_BOARD_STATS_WORKFLOW_ID = "wf_4146c0839e38";
 const SET_IDEA_PINNED_WORKFLOW_ID = "wf_50b43c697fb7";
+const LIST_SEARCHABLE_COMMENTS_WORKFLOW_ID = "wf_8a542072003b";
 const OWNER_SLUG = "__owner__";
 
 // Bidirectional: a Linear state change updates the matching idea's status in
@@ -1585,6 +1586,7 @@ function boardPage(customerSlug, isOwner) {
     .idea { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 14px 16px; margin-bottom: 8px; }
     .idea.pinned { border-color: var(--accent); background: var(--accent-tint); }
     .pin-badge { font-size: 11px; vertical-align: 1px; }
+    .comment-match-badge { font-size: 10.5px; font-weight: 600; color: var(--text-faint); background: var(--surface-2); padding: 2px 7px; border-radius: var(--radius-pill); vertical-align: 1px; }
     .idea-row { display: flex; gap: 14px; align-items: flex-start; }
     .idea-body { flex: 1; min-width: 0; }
     .idea-title { font-weight: 600; font-size: 14px; color: var(--text); }
@@ -1849,10 +1851,17 @@ function boardPage(customerSlug, isOwner) {
       const statusFilterEl = document.getElementById('statusFilter');
       const status = statusFilterEl ? statusFilterEl.value : 'all';
 
+      var commentMatchIds = {};
       let ideas = allIdeas.filter(function (i) {
         if (activeCategory !== 'all' && i.category !== activeCategory) return false;
         if (status !== 'all' && i.status !== status) return false;
-        if (q && i.title.toLowerCase().indexOf(q) === -1 && (i.description || '').toLowerCase().indexOf(q) === -1) return false;
+        if (q) {
+          var inTitle = i.title.toLowerCase().indexOf(q) !== -1;
+          var inDesc = (i.description || '').toLowerCase().indexOf(q) !== -1;
+          var inComments = (commentsByIdea[i.id] || []).some(function (c) { return c.toLowerCase().indexOf(q) !== -1; });
+          if (!inTitle && !inDesc && !inComments) return false;
+          if (inComments && !inTitle && !inDesc) commentMatchIds[i.id] = true;
+        }
         return true;
       });
       ideas = ideas.slice().sort(function (a, b) {
@@ -1880,7 +1889,7 @@ function boardPage(customerSlug, isOwner) {
           '<button class="vote-arrow down' + (hasVoted ? '' : ' disabled') + '" data-idea-id="' + i.id + '"' + (hasVoted ? '' : ' disabled') + ' title="Remove vote">' + ICONS.chevronDown + '</button>' +
           '</div>' +
           '<div class="idea-body">' +
-          '<div class="idea-title">' + (i.is_pinned ? '<span class="pin-badge" title="Pinned by the team">&#128204;</span> ' : '') + escapeHtml(i.title) + '</div>' +
+          '<div class="idea-title">' + (i.is_pinned ? '<span class="pin-badge" title="Pinned by the team">&#128204;</span> ' : '') + escapeHtml(i.title) + (commentMatchIds[i.id] ? ' <span class="comment-match-badge">Found in a comment</span>' : '') + '</div>' +
           (i.description ? '<div class="idea-desc">' + escapeHtml(i.description) + '</div>' : '') +
           '<div class="meta">' +
           '<span class="chip" style="background:' + categoryColor(i.category).bg + ';color:' + categoryColor(i.category).fg + '">' + (ICONS[i.category] || '') + escapeHtml(i.category) + '</span>' +
@@ -2041,13 +2050,16 @@ function boardPage(customerSlug, isOwner) {
       sel.value = current || 'all';
     }
 
+    var commentsByIdea = {};
+
     function load() {
-      fetch('/api/ideas?customer=' + encodeURIComponent(customerSlug))
+      fetch('/api/ideas?customer=' + encodeURIComponent(customerSlug) + '&includeComments=1')
         .then(function (r) { return r.json(); })
         .then(function (d) {
           allIdeas = d.ideas || [];
           if (d.statusLabels) statusLabels = d.statusLabels;
           if (d.categories && d.categories.length) categories = d.categories;
+          commentsByIdea = d.commentsByIdea || {};
           populateCategorySelect();
           populateStatusFilter();
           render();
@@ -4577,7 +4589,14 @@ export default {
           categories = settings?.categories || null;
           hiddenRoadmapStatuses = settings?.hiddenRoadmapStatuses || [];
         } catch {}
-        return json({ ...data, ideas, statusLabels, categories, hiddenRoadmapStatuses });
+        let commentsByIdea = null;
+        if (url.searchParams.get("includeComments") === "1") {
+          try {
+            const commentsData = await callWorkflow(env, LIST_SEARCHABLE_COMMENTS_WORKFLOW_ID, { customerSlug });
+            commentsByIdea = commentsData?.commentsByIdea || {};
+          } catch {}
+        }
+        return json({ ...data, ideas, statusLabels, categories, hiddenRoadmapStatuses, commentsByIdea });
       } catch (err) {
         return json({ ok: false, error: err.message, ideas: [] }, 502);
       }
