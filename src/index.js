@@ -805,7 +805,7 @@ function signupPage(errorMsg) {
     <p>Enter your company name and we'll set up a real board, with your own Slack, Linear, and Notion connections - no login, no credit card.</p>
     ${errorMsg ? `<div class="error">${escapeHtml(errorMsg)}</div>` : ""}
     <form id="form">
-      <label>Company name</label>
+      <label for="name">Company name</label>
       <input id="name" required maxlength="60" placeholder="e.g. Acme SaaS" autofocus />
       <div class="hint" id="hint">Your board will be at requesthub.zohaib-iot.workers.dev/b/<b id="slugPreview">your-slug</b></div>
       <button type="submit" id="submitBtn">Create my board</button>
@@ -1117,7 +1117,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
         <div class="field">
           <select id="slackChannelPicker" disabled><option>Loading your Slack channels...</option></select>
           <p class="select-note" id="slackChannelNote"></p>
-          <label>Channel name</label>
+          <label for="slackChannel">Channel name</label>
           <input id="slackChannel" name="slackChannel" placeholder="#feedback" value="${escapeHtml(settings.slackChannel || "")}" />
         </div>
       </div>
@@ -1128,7 +1128,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
         <div class="field">
           <select id="linearTeamPicker" disabled><option>Loading your Linear teams...</option></select>
           <p class="select-note" id="linearTeamNote"></p>
-          <label>Team ID</label>
+          <label for="linearTeamId">Team ID</label>
           <input id="linearTeamId" name="linearTeamId" placeholder="e.g. 6a0351f8-9f72-49b7-a11a-753726597688" value="${escapeHtml(settings.linearTeamId || "")}" />
         </div>
       </div>
@@ -1139,7 +1139,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
         <div class="field">
           <select id="notionPagePicker" disabled><option>Loading your Notion databases...</option></select>
           <p class="select-note" id="notionPageNote"></p>
-          <label>Database ID</label>
+          <label for="notionPageId">Database ID</label>
           <input id="notionPageId" name="notionPageId" placeholder="e.g. 40aa930e131b81aba587c6ee135c8c82" value="${escapeHtml(settings.notionPageId || "")}" />
         </div>
       </div>
@@ -1154,14 +1154,15 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
             const needsLinear = key === "planned" || key === "in_progress" || key === "shipped";
             const isHidden = (settings.hiddenRoadmapStatuses || []).includes(key);
             return `<div class="field">
-          <label>${defaultLabel}</label>
-          <input name="statusLabel_${key}" value="${escapeHtml(currentLabel)}" placeholder="${defaultLabel}" />
+          <label for="statusLabel_${key}">${defaultLabel}</label>
+          <input id="statusLabel_${key}" name="statusLabel_${key}" value="${escapeHtml(currentLabel)}" placeholder="${defaultLabel}" />
           <label class="checkbox-label" style="font-weight:400;margin-top:6px;">
             <input type="checkbox" name="hideFromRoadmap_${key}" ${isHidden ? "checked" : ""} />
             Hide "${defaultLabel}" from the public roadmap
           </label>
           ${needsLinear
-            ? `<select id="linearState_${key}" name="linearStateId_${key}" data-current="${escapeHtml(settings.linearStateIds?.[key] || "")}" disabled><option>${settings.linearTeamId ? "Loading Linear states..." : "Connect a Linear team above first"}</option></select>
+            ? `<label for="linearState_${key}" style="margin-top:6px;">Linear state</label>
+          <select id="linearState_${key}" name="linearStateId_${key}" data-current="${escapeHtml(settings.linearStateIds?.[key] || "")}" disabled><option>${settings.linearTeamId ? "Loading Linear states..." : "Connect a Linear team above first"}</option></select>
           <p class="select-note" id="linearStateNote_${key}"></p>`
             : ""}
         </div>`;
@@ -1181,8 +1182,8 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
         <h2>Automation</h2>
         <p class="hint">Auto-promote an idea from "Under Review" straight to "Planned" - same as doing it by hand (Linear ticket, webhooks, everything) - once it reaches this many votes. Leave blank to turn off; off by default.</p>
         <div class="field">
-          <label>Auto-promote at N votes</label>
-          <input type="number" min="1" step="1" name="autoPromoteVoteThreshold" value="${settings.autoPromoteVoteThreshold ? escapeHtml(String(settings.autoPromoteVoteThreshold)) : ""}" placeholder="disabled" />
+          <label for="autoPromoteVoteThreshold">Auto-promote at N votes</label>
+          <input id="autoPromoteVoteThreshold" type="number" min="1" step="1" name="autoPromoteVoteThreshold" value="${settings.autoPromoteVoteThreshold ? escapeHtml(String(settings.autoPromoteVoteThreshold)) : ""}" placeholder="disabled" />
         </div>
       </div>
 
@@ -1233,7 +1234,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
       <p class="hint">Invite teammates to sign in with their own email instead of sharing the admin password. Anyone invited gets full admin access, same as the shared password.</p>
       <div id="teamList"></div>
       <div class="team-invite-row">
-        <input type="email" id="inviteEmail" placeholder="teammate@company.com" />
+        <input type="email" id="inviteEmail" placeholder="teammate@company.com" aria-label="Teammate's email address" />
         <button type="button" class="btn-copy" id="inviteBtn">Invite</button>
       </div>
       <p class="hint" id="inviteNote" style="margin-top: 8px;"></p>
@@ -1251,7 +1252,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
         <label class="checkbox-label"><input type="checkbox" id="webhookEventMerged" checked /> Idea merged into another (idea.merged)</label>
       </div>
       <div class="team-invite-row">
-        <input type="url" id="webhookUrl" placeholder="https://your-system.example.com/webhooks/requesthub" />
+        <input type="url" id="webhookUrl" placeholder="https://your-system.example.com/webhooks/requesthub" aria-label="Webhook URL" />
         <button type="button" class="btn-copy" id="addWebhookBtn">Add</button>
       </div>
       <p class="hint" id="webhookNote" style="margin-top: 8px;"></p>
@@ -1919,16 +1920,16 @@ function boardPage(customerSlug, isOwner) {
           <h3>Share your feedback</h3>
           <form id="submit-form">
             <div class="field">
-              <label>What's your idea, bug, or feedback?</label>
+              <label for="title">What's your idea, bug, or feedback?</label>
               <input id="title" required maxlength="200" placeholder="e.g. Export data as CSV" />
             </div>
             <div class="field">
-              <label>More detail (optional)</label>
+              <label for="description">More detail (optional)</label>
               <textarea id="description" maxlength="2000" placeholder="Add any extra context..."></textarea>
             </div>
             <div class="row-2">
               <div class="field">
-                <label>Category</label>
+                <label for="category">Category</label>
                 <select id="category">
                   <option>Feature</option>
                   <option>Bug</option>
@@ -1936,12 +1937,12 @@ function boardPage(customerSlug, isOwner) {
                 </select>
               </div>
               <div class="field">
-                <label>Your email (optional)</label>
+                <label for="submitterEmail">Your email (optional)</label>
                 <input id="submitterEmail" type="email" placeholder="you@example.com" />
               </div>
             </div>
             <div class="field">
-              <label>Tags (optional, comma separated, up to 5)</label>
+              <label for="tags">Tags (optional, comma separated, up to 5)</label>
               <input id="tags" maxlength="200" placeholder="e.g. mobile, performance" />
             </div>
             <button type="submit" class="btn-submit" id="submitFormBtn">Submit</button>
@@ -1957,7 +1958,7 @@ function boardPage(customerSlug, isOwner) {
             <button class="filter-tab" data-sort="comments">Most commented</button>
           </div>
           <select id="statusFilter"><option value="all">All statuses</option></select>
-          <input id="search" placeholder="Search feedback... (press /)" title="Press / to search, c to compose" />
+          <input id="search" placeholder="Search feedback... (press /)" title="Press / to search, c to compose" aria-label="Search feedback" />
         </div>
 
         <div id="list"><div class="empty">Loading...</div></div>
@@ -2104,7 +2105,7 @@ function boardPage(customerSlug, isOwner) {
           '<div class="comments-list"></div>' +
           '<form class="comment-form" data-idea-id="' + i.id + '">' +
           '<input class="comment-name" placeholder="Your name" maxlength="80" />' +
-          '<input class="comment-email" type="email" placeholder="Email (optional)" maxlength="200" />' +
+          '<input class="comment-email" type="email" placeholder="Email (optional)" maxlength="200" aria-label="Your email (optional)" />' +
           '<input class="comment-body" placeholder="Add a comment..." maxlength="2000" required />' +
           '<button type="submit">Post</button>' +
           '</form>' +
@@ -2537,7 +2538,7 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
         '<div class="subscribe-row" id="subscribeRow">' +
         (getSubscribedIds().indexOf(idea.id) !== -1
           ? '<span class="subscribe-done">&#9993; You\\'ll get emailed about updates to this idea.</span>'
-          : '<input id="subscribeEmail" type="email" placeholder="your@email.com" />' +
+          : '<input id="subscribeEmail" type="email" placeholder="your@email.com" aria-label="Your email address" />' +
             '<button type="button" id="subscribeBtn">Notify me about updates</button>') +
         '</div>' +
         '<div class="timeline" id="timeline"></div>' +
@@ -2547,8 +2548,8 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
         '<div class="comments-title">Comments</div>' +
         '<div class="comments-list" id="commentsList"><div class="empty">Loading...</div></div>' +
         '<div class="comment-form">' +
-        '<input id="commentName" placeholder="Your name" style="max-width:140px;" />' +
-        '<input id="commentBody" placeholder="Add a comment..." />' +
+        '<input id="commentName" placeholder="Your name" style="max-width:140px;" aria-label="Your name" />' +
+        '<input id="commentBody" placeholder="Add a comment..." aria-label="Comment" />' +
         (isAdmin ? '<label><input type="checkbox" id="commentInternal" /> Internal note</label>' : '') +
         '<button type="button" id="commentBtn">Post</button>' +
         '</div>' +
@@ -3215,7 +3216,7 @@ function adminPage(customerSlug, isOwner) {
 
   <div class="page">
     <div class="filters-row">
-      <input id="search" placeholder="Search feedback..." />
+      <input id="search" placeholder="Search feedback..." aria-label="Search feedback" />
       <select id="category">
         <option value="all">All categories</option>
         <option value="Feature">Feature</option>
@@ -4123,7 +4124,7 @@ function loginPage(customerSlug, mode, errorMsg, next, isOwner) {
     }</p>
     ${errorMsg ? `<div class="error">${escapeHtml(errorMsg)}</div>` : ""}
     <form id="form">
-      <input id="password" type="password" placeholder="Password" required minlength="6" autofocus />
+      <input id="password" type="password" placeholder="Password" aria-label="Password" required minlength="6" autofocus />
       <button type="submit">${isSetup ? "Set password & continue" : "Log in"}</button>
     </form>
 
@@ -4132,7 +4133,7 @@ function loginPage(customerSlug, mode, errorMsg, next, isOwner) {
         ? ""
         : `<div class="divider">or</div>
     <form id="magicForm">
-      <input id="magicEmail" type="email" placeholder="Your invited email address" required />
+      <input id="magicEmail" type="email" placeholder="Your invited email address" aria-label="Your invited email address" required />
       <button type="submit" class="btn-secondary">Email me a sign-in link</button>
     </form>
     <p class="magic-note" id="magicNote" style="display:none;">If that email is on this board's team, a sign-in link is on its way - check your inbox.</p>`
@@ -4222,7 +4223,7 @@ function ownerLoginPage(errorMsg) {
     <p>This is the product-wide admin - every customer on RequestHub, not just one board.</p>
     ${errorMsg ? `<div class="error">${escapeHtml(errorMsg)}</div>` : ""}
     <form id="form">
-      <input id="password" type="password" placeholder="Owner password" required autofocus />
+      <input id="password" type="password" placeholder="Owner password" aria-label="Owner password" required autofocus />
       <button type="submit">Log in</button>
     </form>
     <a class="back" href="/">&larr; Back home</a>
