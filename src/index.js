@@ -1202,6 +1202,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
         <label class="checkbox-label"><input type="checkbox" id="webhookEventCreated" checked /> Idea submitted (idea.created)</label>
         <label class="checkbox-label"><input type="checkbox" id="webhookEventStatus" checked /> Status changed (idea.status_changed)</label>
         <label class="checkbox-label"><input type="checkbox" id="webhookEventComment" checked /> Comment posted (comment.created)</label>
+        <label class="checkbox-label"><input type="checkbox" id="webhookEventMerged" checked /> Idea merged into another (idea.merged)</label>
       </div>
       <div class="team-invite-row">
         <input type="url" id="webhookUrl" placeholder="https://your-system.example.com/webhooks/requesthub" />
@@ -1575,6 +1576,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
       if (document.getElementById('webhookEventCreated').checked) events.push('idea.created');
       if (document.getElementById('webhookEventStatus').checked) events.push('idea.status_changed');
       if (document.getElementById('webhookEventComment').checked) events.push('comment.created');
+      if (document.getElementById('webhookEventMerged').checked) events.push('idea.merged');
       fetch('/api/customers/' + encodeURIComponent(customerSlug) + '/webhooks', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -5360,7 +5362,7 @@ export default {
         const data = await callWorkflow(env, LIST_WORKFLOW_ID, { customerSlug });
         const ideas = data?.ideas || [];
         const csvEscape = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
-        const header = ["id", "title", "description", "category", "status", "votes", "submitter_email", "linear_issue_url", "created_at"];
+        const header = ["id", "title", "description", "category", "status", "votes", "tags", "submitter_email", "linear_issue_url", "created_at"];
         const rows = ideas.map((i) => header.map((k) => csvEscape(i[k])).join(","));
         const csv = [header.join(","), ...rows].join("\r\n");
         return new Response(csv, {
@@ -5549,6 +5551,12 @@ export default {
           canonicalId,
           customerSlug: mergeCustomerSlug,
         });
+        if (data?.ok) {
+          deliverWebhooks(env, ctx, mergeCustomerSlug, "idea.merged", {
+            duplicate: data.duplicate,
+            canonical: data.canonical,
+          });
+        }
         return json(data);
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
@@ -5618,6 +5626,7 @@ export default {
               description: body.description || "",
               category: body.category || "Feature",
               submitterEmail: body.submitterEmail || "",
+              tags: Array.isArray(body.tags) ? body.tags : [],
               ...(slackChannel ? { slackChannel } : {}),
             },
             endOrgId
@@ -5636,8 +5645,19 @@ export default {
         try {
           const data = await callWorkflow(env, LIST_WORKFLOW_ID, { customerSlug: apiCustomerSlug });
           const idea = (data?.ideas || []).find((i) => i.id === Number(apiIdeaMatch[1]));
-          if (!idea) return json({ ok: false, error: "idea not found" }, 404);
-          return json({ ok: true, idea });
+          if (idea) return json({ ok: true, idea });
+          // Not in the (merge-filtered) list doesn't distinguish "merged into
+          // another idea" from "deleted" or "never existed" - a polling
+          // integration needs that distinction to follow the merge instead
+          // of treating it as data loss.
+          const rawData = await callWorkflow(env, GET_IDEA_RAW_WORKFLOW_ID, {
+            ideaId: Number(apiIdeaMatch[1]),
+            customerSlug: apiCustomerSlug,
+          });
+          if (rawData?.ok && rawData.idea?.mergedInto) {
+            return json({ ok: false, error: "idea was merged into another idea", mergedInto: rawData.idea.mergedInto }, 410);
+          }
+          return json({ ok: false, error: "idea not found" }, 404);
         } catch (err) {
           return json({ ok: false, error: err.message }, 502);
         }
@@ -5658,6 +5678,13 @@ export default {
           const listData = await callWorkflow(env, LIST_WORKFLOW_ID, { customerSlug: apiCustomerSlug });
           const belongs = (listData?.ideas || []).some((i) => i.id === Number(apiStatusMatch[1]));
           if (!belongs) {
+            const rawData = await callWorkflow(env, GET_IDEA_RAW_WORKFLOW_ID, {
+              ideaId: Number(apiStatusMatch[1]),
+              customerSlug: apiCustomerSlug,
+            });
+            if (rawData?.ok && rawData.idea?.mergedInto) {
+              return json({ ok: false, error: "idea was merged into another idea", mergedInto: rawData.idea.mergedInto }, 410);
+            }
             return json({ ok: false, error: "idea not found for this API key's tenant" }, 404);
           }
           const endOrgId = await getTenantOrgId(env, apiCustomerSlug);
