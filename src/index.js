@@ -590,11 +590,12 @@ function homePage() {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>RequestHub - feedback boards for SaaS teams</title>
   ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
     body { font-weight: 400; }
     a { color: inherit; }
-    .nav { position: sticky; top: 0; z-index: 10; background: rgba(244,243,247,.85); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    .nav { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
     .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
     .brand { font-weight: 700; font-size: 15px; }
     .nav-right { margin-left: auto; display: flex; align-items: center; gap: 18px; }
@@ -655,6 +656,7 @@ function homePage() {
       <a class="nav-link" href="#pricing">Pricing</a>
       <a class="nav-link" href="/login">Log in</a>
       <a class="nav-cta" href="/signup">Get started</a>
+      <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
     </div>
   </div>
 
@@ -729,6 +731,7 @@ function loginLookupPage(errorMsg) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Log in - RequestHub</title>
   ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
     body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
@@ -746,6 +749,7 @@ function loginLookupPage(errorMsg) {
 </head>
 <body>
   <div class="card">
+    <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode" style="position:fixed;top:16px;right:16px;"></button>
     <div class="logo-mark">R</div>
     <h1>Log in to your board</h1>
     <p>Enter your board's name to go to its admin login.</p>
@@ -776,6 +780,7 @@ function signupPage(errorMsg) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Start your board - RequestHub</title>
   ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
     body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
@@ -800,6 +805,7 @@ function signupPage(errorMsg) {
 </head>
 <body>
   <div class="card">
+    <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode" style="position:fixed;top:16px;right:16px;"></button>
     <div class="logo-mark">R</div>
     <h1>Start your own feedback board</h1>
     <p>Enter your company name and we'll set up a real board, with your own Slack, Linear, and Notion connections - no login, no credit card.</p>
@@ -857,6 +863,7 @@ function signupDonePage(customerSlug, baseUrl) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>You're set up - RequestHub</title>
   ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
     .page { max-width: 560px; margin: 0 auto; padding: 48px 24px; }
@@ -874,6 +881,7 @@ function signupDonePage(customerSlug, baseUrl) {
 </head>
 <body>
   <div class="page">
+    <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode" style="position:fixed;top:16px;right:16px;"></button>
     <div class="logo-mark">R</div>
     <h1>Your board is live</h1>
     <p>Your real feedback board exists now at <b>/b/${escapeHtml(customerSlug)}</b>. Three steps left, all yours to do:</p>
@@ -1692,6 +1700,7 @@ function connectUnavailablePage(customerSlug, isOwner) {
 </head>
 <body>
   <div class="card">
+    <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode" style="position:fixed;top:16px;right:16px;"></button>
     <h1>No connected workspace yet</h1>
     <p>"${escapeHtml(customerSlug)}" isn't set up as a tenant with connectable tools yet.</p>
     <a href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
@@ -3958,6 +3967,7 @@ function unsubscribePage(ok, ideaTitle, error) {
 </head>
 <body>
   <div class="card">
+    <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode" style="position:fixed;top:16px;right:16px;"></button>
     ${ok
       ? `<h1>You're unsubscribed</h1><p>You won't get any more email updates about${ideaTitle ? ` "${escapeHtml(ideaTitle)}"` : " this idea"}.</p>`
       : `<h1>Couldn't unsubscribe</h1><p>${escapeHtml(error || "That link is invalid or has already been used.")}</p>`}
@@ -4089,6 +4099,7 @@ function loginPage(customerSlug, mode, errorMsg, next, isOwner) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${isSetup ? "Set admin password" : "Log in"} - RequestHub</title>
   ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
     body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
@@ -4116,6 +4127,7 @@ function loginPage(customerSlug, mode, errorMsg, next, isOwner) {
 </head>
 <body>
   <div class="card">
+    <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode" style="position:fixed;top:16px;right:16px;"></button>
     <h1>${isSetup ? "Set your admin password" : "Admin login"}</h1>
     <p>${
       isSetup
@@ -4197,6 +4209,7 @@ function ownerLoginPage(errorMsg) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Owner login - RequestHub</title>
   ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
     ${DESIGN_TOKENS}
     body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
@@ -4219,6 +4232,7 @@ function ownerLoginPage(errorMsg) {
 </head>
 <body>
   <div class="card">
+    <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode" style="position:fixed;top:16px;right:16px;"></button>
     <h1>RequestHub owner console</h1>
     <p>This is the product-wide admin - every customer on RequestHub, not just one board.</p>
     ${errorMsg ? `<div class="error">${escapeHtml(errorMsg)}</div>` : ""}
