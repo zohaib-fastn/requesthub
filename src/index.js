@@ -5510,6 +5510,7 @@ export default {
           isTeam,
           internal: isTeam && Boolean(body.internal),
           ideaUrl: isTeam ? `${url.origin}/b/${encodeURIComponent(commentCustomerSlug)}/ideas/${commentsMatch[1]}` : "",
+          baseUrl: isTeam ? url.origin : "",
         });
         if (data?.ok && data.comment && !data.comment.internal && data.customerSlug) {
           deliverWebhooks(env, ctx, data.customerSlug, "comment.created", {
