@@ -1234,7 +1234,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
       <h2>API access</h2>
       <p class="hint">Call RequestHub from your own backend instead of (or alongside) the embed widget - list ideas, create one, or update a status. One active key per board; generating a new one revokes the old.</p>
       <div id="apiKeyStatus"><p class="hint">Loading...</p></div>
-      <p class="hint" style="margin-top: 10px;"><code style="background:none;border:none;padding:0;display:inline;">GET/POST ${escapeHtml(baseUrl)}/api/v1/ideas</code>, <code style="background:none;border:none;padding:0;display:inline;">GET ${escapeHtml(baseUrl)}/api/v1/ideas/:id</code>, <code style="background:none;border:none;padding:0;display:inline;">POST ${escapeHtml(baseUrl)}/api/v1/ideas/:id/status</code> - send your key as <code style="background:none;border:none;padding:0;display:inline;">Authorization: Bearer rhk_...</code>.</p>
+      <p class="hint" style="margin-top: 10px;"><code style="background:none;border:none;padding:0;display:inline;">GET/POST ${escapeHtml(baseUrl)}/api/v1/ideas</code>, <code style="background:none;border:none;padding:0;display:inline;">GET/DELETE ${escapeHtml(baseUrl)}/api/v1/ideas/:id</code>, <code style="background:none;border:none;padding:0;display:inline;">POST ${escapeHtml(baseUrl)}/api/v1/ideas/:id/status</code> - send your key as <code style="background:none;border:none;padding:0;display:inline;">Authorization: Bearer rhk_...</code>.</p>
     </div>
 
     <div class="card">
@@ -5880,6 +5880,18 @@ export default {
       }
 
       const apiIdeaMatch = url.pathname.match(/^\/api\/v1\/ideas\/(\d+)$/);
+      if (request.method === "DELETE" && apiIdeaMatch) {
+        try {
+          const data = await callWorkflow(env, DELETE_IDEA_WORKFLOW_ID, {
+            ideaId: Number(apiIdeaMatch[1]),
+            customerSlug: apiCustomerSlug,
+          });
+          if (!data?.ok) return json(data, 404);
+          return json(data);
+        } catch (err) {
+          return json({ ok: false, error: err.message }, 502);
+        }
+      }
       if (request.method === "GET" && apiIdeaMatch) {
         try {
           const data = await callWorkflow(env, LIST_WORKFLOW_ID, { customerSlug: apiCustomerSlug });

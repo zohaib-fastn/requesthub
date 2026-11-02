@@ -4,16 +4,46 @@
 // log in - there's no safe, scriptable way to do that without a real
 // customer's password). Run: node tests/smoke.mjs [baseUrl]
 //
-// Leaves one tagged test idea behind on the "demo" tenant (same precedent as
-// every other piece of test data already in this project) - there's no
-// public delete endpoint to clean it up without an admin session.
+// Writes go to a dedicated "smoke-test" tenant, never "demo": the hourly runs
+// used to leave ~90 junk ideas on the board prospects see from "See a live
+// demo". Every idea created here is deleted at the end through the partner
+// API, using the smoke-test tenant's key from SMOKE_API_KEY or tests/.smoke.env.
+
+import { readFileSync } from "node:fs";
 
 const BASE_URL = process.argv[2] || "https://requesthub.zohaib-iot.workers.dev";
-const CUSTOMER = "demo";
+const CUSTOMER = process.env.SMOKE_CUSTOMER || "smoke-test";
+
+function loadSmokeKey() {
+  if (process.env.SMOKE_API_KEY) return process.env.SMOKE_API_KEY;
+  try {
+    const line = readFileSync(new URL("./.smoke.env", import.meta.url), "utf8")
+      .split("\n")
+      .find((l) => l.startsWith("SMOKE_API_KEY="));
+    return line ? line.slice("SMOKE_API_KEY=".length).trim() : "";
+  } catch {
+    return "";
+  }
+}
+const SMOKE_API_KEY = loadSmokeKey();
 
 let passed = 0;
 let failed = 0;
 const failures = [];
+const createdIdeaIds = [];
+
+const realFetch = globalThis.fetch;
+globalThis.fetch = async (input, init) => {
+  const res = await realFetch(input, init);
+  const url = typeof input === "string" ? input : input.url;
+  if (init?.method === "POST" && url.endsWith("/api/ideas")) {
+    try {
+      const body = await res.clone().json();
+      if (body?.idea?.id) createdIdeaIds.push(body.idea.id);
+    } catch {}
+  }
+  return res;
+};
 
 async function check(name, fn) {
   try {
@@ -406,9 +436,29 @@ async function run() {
     assert(r.status === 401, "status " + r.status);
   });
 
+  if (SMOKE_API_KEY && createdIdeaIds.length) {
+    console.log("\nCleanup (partner API, " + CUSTOMER + " tenant):");
+    await check("partner API v1 deletes the ideas this run created", async () => {
+      for (const id of createdIdeaIds) {
+        const r = await realFetch(BASE_URL + "/api/v1/ideas/" + id, {
+          method: "DELETE",
+          headers: { Authorization: "Bearer " + SMOKE_API_KEY },
+        });
+        assert(r.status === 200, "delete #" + id + " status " + r.status);
+      }
+    });
+    await check("partner API v1 delete is tenant-scoped (another tenant's idea is not found)", async () => {
+      const r = await realFetch(BASE_URL + "/api/v1/ideas/4", {
+        method: "DELETE",
+        headers: { Authorization: "Bearer " + SMOKE_API_KEY },
+      });
+      assert(r.status === 404, "status " + r.status + " - smoke-test key must not delete demo's idea #4");
+    });
+  }
+
   console.log("\n" + passed + " passed, " + failed + " failed.");
-  if (ideaId) {
-    console.log("Left test idea #" + ideaId + " on the \"" + CUSTOMER + "\" board (tagged [smoke-test], no delete route exists without an admin session).");
+  if (!SMOKE_API_KEY && createdIdeaIds.length) {
+    console.log("No SMOKE_API_KEY - left " + createdIdeaIds.length + " test idea(s) on the \"" + CUSTOMER + "\" board.");
   }
   if (failed > 0) {
     console.log("\nFailures:");
