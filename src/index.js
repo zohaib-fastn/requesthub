@@ -1791,6 +1791,16 @@ function boardPage(customerSlug, isOwner) {
     }
 
     .empty { color: var(--text-faint); font-size: 13.5px; text-align: center; padding: 40px 16px; }
+    .skeleton { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 16px; margin-bottom: 8px; display: flex; gap: 14px; }
+    .skeleton .sk { background: var(--surface-2); border-radius: 6px; animation: sk-pulse 1.2s ease-in-out infinite; }
+    .skeleton .sk-vote { width: 36px; height: 52px; flex-shrink: 0; }
+    .skeleton .sk-lines { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+    @keyframes sk-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+    @media (prefers-reduced-motion: reduce) { .skeleton .sk { animation: none; } }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    .show-more { display: block; width: 100%; margin: 4px 0 12px; padding: 10px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); color: var(--text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .show-more:hover { border-color: var(--accent); }
+    .rh-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text); color: var(--card); padding: 10px 16px; border-radius: 10px; font-size: 13px; z-index: 50; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
 
     .idea { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 14px 16px; margin-bottom: 8px; }
     .idea.pinned { border-color: var(--accent); background: var(--accent-tint); }
@@ -1994,7 +2004,7 @@ function boardPage(customerSlug, isOwner) {
           <input id="search" placeholder="Search feedback... (press /)" title="Press / to search, c to compose" aria-label="Search feedback" />
         </div>
 
-        <div id="list"><div class="empty">Loading...</div></div>
+        <div id="list" aria-busy="true"><span class="sr-only">Loading feedback</span><div class="skeleton" aria-hidden="true"><div class="sk sk-vote"></div><div class="sk-lines"><div class="sk" style="height:14px;width:62%"></div><div class="sk" style="height:11px;width:88%"></div><div class="sk" style="height:18px;width:34%"></div></div></div><div class="skeleton" aria-hidden="true"><div class="sk sk-vote"></div><div class="sk-lines"><div class="sk" style="height:14px;width:62%"></div><div class="sk" style="height:11px;width:88%"></div><div class="sk" style="height:18px;width:34%"></div></div></div><div class="skeleton" aria-hidden="true"><div class="sk sk-vote"></div><div class="sk-lines"><div class="sk" style="height:14px;width:62%"></div><div class="sk" style="height:11px;width:88%"></div><div class="sk" style="height:18px;width:34%"></div></div></div><div class="skeleton" aria-hidden="true"><div class="sk sk-vote"></div><div class="sk-lines"><div class="sk" style="height:14px;width:62%"></div><div class="sk" style="height:11px;width:88%"></div><div class="sk" style="height:18px;width:34%"></div></div></div></div>
       </div>
 
       <div class="sidebar">
@@ -2107,21 +2117,20 @@ function boardPage(customerSlug, isOwner) {
         return b.votes - a.votes;
       });
 
+      list.removeAttribute('aria-busy');
       if (!ideas.length) {
-        list.innerHTML = '<div class="empty">No feedback yet - be the first!</div>';
+        list.innerHTML = allIdeas.length
+          ? '<div class="empty">No feedback matches these filters.</div>'
+          : '<div class="empty">No feedback yet - be the first!</div>';
         return;
       }
-      const voted = getVotedIds();
+      const remaining = ideas.length - visibleCount;
+      ideas = ideas.slice(0, visibleCount);
 
       list.innerHTML = ideas.map(function (i) {
-        const hasVoted = voted.indexOf(i.id) !== -1;
         return '<div class="idea' + (i.is_pinned ? ' pinned' : '') + '">' +
           '<div class="idea-row">' +
-          '<div class="vote-widget">' +
-          '<button class="vote-arrow up' + (hasVoted ? ' on' : '') + '" data-idea-id="' + i.id + '"' + (hasVoted ? ' disabled' : '') + ' title="Vote">' + ICONS.chevronUp + '</button>' +
-          '<span class="vote-count">' + i.votes + '</span>' +
-          '<button class="vote-arrow down' + (hasVoted ? '' : ' disabled') + '" data-idea-id="' + i.id + '"' + (hasVoted ? '' : ' disabled') + ' title="Remove vote">' + ICONS.chevronDown + '</button>' +
-          '</div>' +
+          '<div class="vote-widget" id="vw-' + i.id + '">' + voteWidgetInner(i) + '</div>' +
           '<div class="idea-body">' +
           '<div class="idea-title">' + (i.is_pinned ? '<span class="pin-badge" title="Pinned by the team">&#128204;</span> ' : '') + escapeHtml(i.title) + (commentMatchIds[i.id] ? ' <span class="comment-match-badge">Found in a comment</span>' : '') + '</div>' +
           (i.description ? '<div class="idea-desc">' + escapeHtml(i.description) + '</div>' : '') +
@@ -2146,26 +2155,16 @@ function boardPage(customerSlug, isOwner) {
           '</div>' +
           '</div>' +
           '</div>';
-      }).join('');
+      }).join('') +
+        (remaining > 0 ? '<button type="button" class="show-more" id="showMore">Show ' + Math.min(remaining, PAGE_SIZE) + ' more (' + remaining + ' remaining)</button>' : '');
 
-      list.querySelectorAll('.vote-arrow').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          if (btn.disabled) return;
-          const ideaId = btn.getAttribute('data-idea-id');
-          const direction = btn.classList.contains('up') ? 'up' : 'down';
-          fetch('/api/ideas/' + ideaId + '/vote', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ direction }),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function () {
-              if (direction === 'up') addVotedId(Number(ideaId));
-              else removeVotedId(Number(ideaId));
-              load();
-            });
+      var showMoreBtn = document.getElementById('showMore');
+      if (showMoreBtn) {
+        showMoreBtn.addEventListener('click', function () {
+          visibleCount += PAGE_SIZE;
+          render();
         });
-      });
+      }
 
       list.querySelectorAll('.comment-count').forEach(function (btn) {
         btn.addEventListener('click', function () {
@@ -2185,6 +2184,10 @@ function boardPage(customerSlug, isOwner) {
           const bodyInput = form.querySelector('.comment-body');
           const body = bodyInput.value.trim();
           if (!body) return;
+          const postBtn = form.querySelector('button[type="submit"]');
+          if (postBtn.disabled) return;
+          postBtn.disabled = true;
+          postBtn.textContent = 'Posting...';
           fetch('/api/ideas/' + ideaId + '/comments', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -2195,13 +2198,98 @@ function boardPage(customerSlug, isOwner) {
             }),
           })
             .then(function (r) { return r.json(); })
-            .then(function () {
+            .then(function (d) {
+              if (!d || d.ok === false) throw new Error((d && d.error) || 'failed');
               bodyInput.value = '';
+              const idea = allIdeas.find(function (x) { return x.id === Number(ideaId); });
+              if (idea) {
+                idea.comment_count = (idea.comment_count || 0) + 1;
+                const num = document.querySelector('.comment-count[data-idea-id="' + ideaId + '"] .cc-num');
+                if (num) num.textContent = idea.comment_count + ' Comment' + (idea.comment_count === 1 ? '' : 's');
+              }
               loadComments(ideaId);
+            })
+            .catch(function () { showToast("Couldn't post your comment - please try again."); })
+            .then(function () {
+              postBtn.disabled = false;
+              postBtn.textContent = 'Post';
             });
         });
       });
     }
+
+    var PAGE_SIZE = 50;
+    var visibleCount = PAGE_SIZE;
+    function resetAndRender() {
+      visibleCount = PAGE_SIZE;
+      render();
+    }
+
+    function voteWidgetInner(i) {
+      const hasVoted = getVotedIds().indexOf(i.id) !== -1;
+      return '<button class="vote-arrow up' + (hasVoted ? ' on' : '') + '" data-idea-id="' + i.id + '"' + (hasVoted ? ' disabled' : '') + ' title="Vote" aria-label="Upvote">' + ICONS.chevronUp + '</button>' +
+        '<span class="vote-count">' + i.votes + '</span>' +
+        '<button class="vote-arrow down' + (hasVoted ? '' : ' disabled') + '" data-idea-id="' + i.id + '"' + (hasVoted ? '' : ' disabled') + ' title="Remove vote" aria-label="Remove vote">' + ICONS.chevronDown + '</button>';
+    }
+
+    function refreshVoteWidget(ideaId) {
+      const el = document.getElementById('vw-' + ideaId);
+      const idea = allIdeas.find(function (x) { return x.id === ideaId; });
+      if (el && idea) el.innerHTML = voteWidgetInner(idea);
+    }
+
+    var toastTimer = null;
+    function showToast(msg) {
+      var t = document.getElementById('rhToast');
+      if (!t) {
+        t = document.createElement('div');
+        t.id = 'rhToast';
+        t.className = 'rh-toast';
+        t.setAttribute('role', 'status');
+        document.body.appendChild(t);
+      }
+      t.textContent = msg;
+      t.hidden = false;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { t.hidden = true; }, 3500);
+    }
+
+    var votesInFlight = {};
+    document.getElementById('list').addEventListener('click', function (e) {
+      const btn = e.target.closest('.vote-arrow');
+      if (!btn || btn.disabled) return;
+      const ideaId = Number(btn.getAttribute('data-idea-id'));
+      if (votesInFlight[ideaId]) return;
+      const idea = allIdeas.find(function (x) { return x.id === ideaId; });
+      if (!idea) return;
+      const direction = btn.classList.contains('up') ? 'up' : 'down';
+      const prevVotes = idea.votes;
+      votesInFlight[ideaId] = true;
+      idea.votes = Math.max(0, prevVotes + (direction === 'up' ? 1 : -1));
+      if (direction === 'up') addVotedId(ideaId); else removeVotedId(ideaId);
+      refreshVoteWidget(ideaId);
+      fetch('/api/ideas/' + ideaId + '/vote', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ direction }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d || d.ok === false) throw new Error((d && d.error) || 'failed');
+          if (d.idea) {
+            idea.votes = d.idea.votes;
+            if (d.idea.status) idea.status = d.idea.status;
+          }
+          if (d.autoPromoted) render(); else refreshVoteWidget(ideaId);
+        })
+        .catch(function () {
+          idea.votes = prevVotes;
+          if (direction === 'up') removeVotedId(ideaId); else addVotedId(ideaId);
+          refreshVoteWidget(ideaId);
+          showToast("Couldn't save your vote - please try again.");
+        })
+        .then(function () { delete votesInFlight[ideaId]; });
+    });
 
     function renderNav() {
       const nav = document.getElementById('categoryNav');
@@ -2217,7 +2305,7 @@ function boardPage(customerSlug, isOwner) {
       nav.querySelectorAll('.nav-item').forEach(function (btn) {
         btn.addEventListener('click', function () {
           activeCategory = btn.getAttribute('data-cat');
-          render();
+          resetAndRender();
         });
       });
     }
@@ -2305,15 +2393,15 @@ function boardPage(customerSlug, isOwner) {
         });
     }
 
-    document.getElementById('search').addEventListener('input', render);
-    document.getElementById('statusFilter').addEventListener('change', render);
+    document.getElementById('search').addEventListener('input', resetAndRender);
+    document.getElementById('statusFilter').addEventListener('change', resetAndRender);
 
     document.querySelectorAll('.filter-tab').forEach(function (btn) {
       btn.addEventListener('click', function () {
         document.querySelectorAll('.filter-tab').forEach(function (b) { b.classList.remove('active'); });
         btn.classList.add('active');
         activeSort = btn.getAttribute('data-sort');
-        render();
+        resetAndRender();
       });
     });
 
@@ -4490,7 +4578,86 @@ function ownerDashboardPage(customers, errorMsg) {
 </html>`;
 }
 
-export default {
+// Public board reads cost ~2s each (a Fastn workflow round-trip from the edge),
+// so the board, roadmap and changelog APIs are served stale-while-revalidate
+// from this colo's cache. Every write through this Worker purges the tenant's
+// keys before responding, so the person who just voted/commented always reads
+// their own write; other colos may lag by up to BOARD_CACHE_FRESH_MS.
+const BOARD_CACHE_FRESH_MS = 15000;
+const BOARD_CACHE_MAX_AGE_S = 600;
+const tenantOfWrite = new WeakMap();
+
+function boardCacheKeys(origin, slug) {
+  const s = encodeURIComponent(slug);
+  return [
+    `${origin}/api/ideas?customer=${s}`,
+    `${origin}/api/ideas?customer=${s}&includeComments=1`,
+    `${origin}/api/customers/${s}/changelog`,
+  ];
+}
+
+function boardCacheKeyFor(url) {
+  if (url.pathname === "/api/ideas") {
+    const slug = url.searchParams.get("customer");
+    const ic = url.searchParams.get("includeComments");
+    const onlyKnownParams = [...url.searchParams.keys()].every((k) => k === "customer" || k === "includeComments");
+    if (!slug || !onlyKnownParams || (ic !== null && ic !== "1")) return null;
+    return `${url.origin}/api/ideas?customer=${encodeURIComponent(slug)}${ic === "1" ? "&includeComments=1" : ""}`;
+  }
+  const m = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/changelog\/?$/);
+  if (m && !url.search) return `${url.origin}/api/customers/${m[1]}/changelog`;
+  return null;
+}
+
+async function refreshBoardCache(cache, key, request, env, ctx) {
+  const res = await app.fetch(new Request(key, { headers: request.headers }), env, ctx);
+  if (res.status === 200) {
+    const copy = new Response(res.clone().body, res);
+    copy.headers.set("cache-control", `public, max-age=${BOARD_CACHE_MAX_AGE_S}`);
+    copy.headers.set("x-rh-cached-at", String(Date.now()));
+    await cache.put(key, copy);
+  }
+  return res;
+}
+
+async function cachedBoardRead(key, request, env, ctx) {
+  const cache = caches.default;
+  const hit = await cache.match(key);
+  if (hit) {
+    const age = Date.now() - Number(hit.headers.get("x-rh-cached-at") || 0);
+    if (age > BOARD_CACHE_FRESH_MS) ctx.waitUntil(refreshBoardCache(cache, key, request, env, ctx).catch(() => {}));
+    const out = new Response(hit.body, hit);
+    out.headers.set("cache-control", "no-store");
+    return out;
+  }
+  const res = await refreshBoardCache(cache, key, request, env, ctx);
+  const out = new Response(res.body, res);
+  out.headers.set("cache-control", "no-store");
+  return out;
+}
+
+async function writeTenants(request, reqBody, res) {
+  const url = new URL(request.url);
+  const slugs = new Set();
+  const add = (s) => {
+    if (typeof s === "string" && /^[a-z0-9-]+$/.test(s)) slugs.add(s);
+  };
+  add(tenantOfWrite.get(request));
+  add(url.searchParams.get("customer"));
+  add((url.pathname.match(/^\/api\/(?:customers|webhooks\/linear)\/([a-z0-9-]+)/) || [])[1]);
+  if (reqBody) {
+    add(reqBody.customerSlug);
+    add(reqBody.customer);
+  }
+  try {
+    const body = await res.clone().json();
+    add(body?.customerSlug);
+    add(body?.idea?.customer_slug);
+  } catch {}
+  return slugs;
+}
+
+const app = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
@@ -5389,7 +5556,14 @@ export default {
       const statusFilter = url.searchParams.get("status");
       const categoryFilter = url.searchParams.get("category");
       try {
-        const data = await callWorkflow(env, LIST_WORKFLOW_ID, { customerSlug });
+        const wantComments = url.searchParams.get("includeComments") === "1";
+        const [data, settings, commentsData] = await Promise.all([
+          callWorkflow(env, LIST_WORKFLOW_ID, { customerSlug }),
+          callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug }).catch(() => null),
+          wantComments
+            ? callWorkflow(env, LIST_SEARCHABLE_COMMENTS_WORKFLOW_ID, { customerSlug }).catch(() => null)
+            : Promise.resolve(null),
+        ]);
         let ideas = data?.ideas || [];
         if (statusFilter && STATUSES.includes(statusFilter)) {
           ideas = ideas.filter(function (i) { return i.status === statusFilter; });
@@ -5397,22 +5571,10 @@ export default {
         if (categoryFilter) {
           ideas = ideas.filter(function (i) { return i.category === categoryFilter; });
         }
-        let statusLabels = null;
-        let categories = null;
-        let hiddenRoadmapStatuses = [];
-        try {
-          const settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug });
-          statusLabels = settings?.statusLabels || null;
-          categories = settings?.categories || null;
-          hiddenRoadmapStatuses = settings?.hiddenRoadmapStatuses || [];
-        } catch {}
-        let commentsByIdea = null;
-        if (url.searchParams.get("includeComments") === "1") {
-          try {
-            const commentsData = await callWorkflow(env, LIST_SEARCHABLE_COMMENTS_WORKFLOW_ID, { customerSlug });
-            commentsByIdea = commentsData?.commentsByIdea || {};
-          } catch {}
-        }
+        const statusLabels = settings?.statusLabels || null;
+        const categories = settings?.categories || null;
+        const hiddenRoadmapStatuses = settings?.hiddenRoadmapStatuses || [];
+        const commentsByIdea = wantComments ? commentsData?.commentsByIdea || {} : null;
         return json({ ...data, ideas, statusLabels, categories, hiddenRoadmapStatuses, commentsByIdea });
       } catch (err) {
         return json({ ok: false, error: err.message, ideas: [] }, 502);
@@ -5826,6 +5988,7 @@ export default {
     // own, unlike the session-cookie routes above which take it as a param.
     if (url.pathname.startsWith("/api/v1/")) {
       const apiCustomerSlug = await requireApiKey(request, env);
+      if (apiCustomerSlug) tenantOfWrite.set(request, apiCustomerSlug);
       if (!apiCustomerSlug) {
         return json({ ok: false, error: "invalid or missing API key - use 'Authorization: Bearer rhk_...'" }, 401);
       }
@@ -5969,5 +6132,29 @@ export default {
     }
 
     return new Response("Not found", { status: 404 });
+  },
+};
+
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    if (request.method === "HEAD") {
+      const res = await this.fetch(new Request(request, { method: "GET" }), env, ctx);
+      return new Response(null, res);
+    }
+    if (request.method === "GET") {
+      const key = boardCacheKeyFor(url);
+      return key ? cachedBoardRead(key, request, env, ctx) : app.fetch(request, env, ctx);
+    }
+    if (!url.pathname.startsWith("/api/")) return app.fetch(request, env, ctx);
+    const reqCopy = request.clone();
+    const res = await app.fetch(request, env, ctx);
+    let reqBody = null;
+    try {
+      reqBody = await reqCopy.json();
+    } catch {}
+    const slugs = await writeTenants(request, reqBody, res);
+    await Promise.all([...slugs].flatMap((s) => boardCacheKeys(url.origin, s).map((k) => caches.default.delete(k))));
+    return res;
   },
 };
