@@ -808,12 +808,15 @@ function signupPage(errorMsg) {
     <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode" style="position:fixed;top:16px;right:16px;"></button>
     <div class="logo-mark">R</div>
     <h1>Start your own feedback board</h1>
-    <p>Enter your company name and we'll set up a real board, with your own Slack, Linear, and Notion connections - no login, no credit card.</p>
-    ${errorMsg ? `<div class="error">${escapeHtml(errorMsg)}</div>` : ""}
+    <p>Enter your company name and an admin password. We'll set up a real board, with your own Slack, Linear, and Notion connections - no credit card.</p>
+    <div class="error" id="formError" role="alert"${errorMsg ? "" : " hidden"}>${errorMsg ? escapeHtml(errorMsg) : ""}</div>
     <form id="form">
       <label for="name">Company name</label>
       <input id="name" required maxlength="60" placeholder="e.g. Acme SaaS" autofocus />
       <div class="hint" id="hint">Your board will be at requesthub.zohaib-iot.workers.dev/b/<b id="slugPreview">your-slug</b></div>
+      <label for="password">Admin password</label>
+      <input id="password" type="password" required minlength="8" maxlength="200" autocomplete="new-password" placeholder="At least 8 characters" />
+      <div class="hint">You'll use this to triage ideas and connect your tools. You can invite teammates later.</div>
       <button type="submit" id="submitBtn">Create my board</button>
     </form>
     <a class="back" href="/">&larr; Back</a>
@@ -830,24 +833,27 @@ function signupPage(errorMsg) {
     document.getElementById('form').addEventListener('submit', function (e) {
       e.preventDefault();
       var btn = document.getElementById('submitBtn');
+      var errEl = document.getElementById('formError');
+      function fail(msg) {
+        errEl.textContent = msg;
+        errEl.hidden = false;
+        btn.disabled = false;
+        btn.textContent = 'Create my board';
+      }
+      errEl.hidden = true;
       btn.disabled = true;
       btn.textContent = 'Creating your board...';
       fetch('/api/signup', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: nameInput.value.trim() }),
+        body: JSON.stringify({ name: nameInput.value.trim(), password: document.getElementById('password').value }),
       })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-          if (d.ok) {
-            window.location.href = '/signup/done?slug=' + encodeURIComponent(d.slug);
-          } else {
-            window.location.href = '/signup?error=' + encodeURIComponent(d.error || 'Could not create your board');
-          }
+          if (d.ok) window.location.href = '/signup/done?slug=' + encodeURIComponent(d.slug);
+          else fail(d.error || 'Could not create your board');
         })
-        .catch(function () {
-          window.location.href = '/signup?error=' + encodeURIComponent('Something went wrong - try again');
-        });
+        .catch(function () { fail('Something went wrong - try again'); });
     });
   </script>
 </body>
@@ -887,9 +893,9 @@ function signupDonePage(customerSlug, baseUrl) {
     <p>Your real feedback board exists now at <b>/b/${escapeHtml(customerSlug)}</b>. Three steps left, all yours to do:</p>
 
     <div class="step">
-      <span class="step-num">1</span><h3>Set your admin password</h3>
-      <p>No login exists yet for your board - the first visit lets you choose one.</p>
-      <a class="btn" href="/b/${encodeURIComponent(customerSlug)}/admin">Set password &rarr;</a>
+      <span class="step-num">1</span><h3>Open your triage dashboard</h3>
+      <p>You're signed in as this board's admin. Move ideas through Under Review, Planned and Shipped from here.</p>
+      <a class="btn" href="/b/${encodeURIComponent(customerSlug)}/admin">Open triage &rarr;</a>
     </div>
 
     <div class="step">
@@ -1217,7 +1223,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
         <code id="embedSnippet">${escapeHtml(embedSnippet)}</code>
         <button type="button" class="btn-copy" id="copyEmbedBtn">Copy</button>
       </div>
-      <p class="hint" style="margin-top: 10px;">Optional: add <code style="background:none;border:none;padding:0;display:inline;">data-color="#ff6600"</code> to match your brand, and <code style="background:none;border:none;padding:0;display:inline;">data-position="bottom-left"</code> / <code style="background:none;border:none;padding:0;display:inline;">"top-left"</code> / <code style="background:none;border:none;padding:0;display:inline;">"top-right"</code> to move it (defaults to bottom-right, current purple). Already have your own feedback button somewhere on your site? Add <code style="background:none;border:none;padding:0;display:inline;">data-target="#your-button-id"</code> and that button opens the panel directly - no floating bubble at all.</p>
+      <p class="hint" style="margin-top: 10px;">Optional: add <code style="background:none;border:none;padding:0;display:inline;">data-color="#ff6600"</code> to match your brand, and <code style="background:none;border:none;padding:0;display:inline;">data-position="bottom-left"</code> / <code style="background:none;border:none;padding:0;display:inline;">"top-left"</code> / <code style="background:none;border:none;padding:0;display:inline;">"top-right"</code> to move it (defaults to bottom-right, current purple). It follows your visitor's light/dark setting; force one with <code style="background:none;border:none;padding:0;display:inline;">data-theme="light"</code> or <code style="background:none;border:none;padding:0;display:inline;">"dark"</code>. Already have your own feedback button somewhere on your site? Add <code style="background:none;border:none;padding:0;display:inline;">data-target="#your-button-id"</code> and that button opens the panel directly - no floating bubble at all.</p>
     </div>
 
     <div class="card">
@@ -2001,7 +2007,7 @@ function boardPage(customerSlug, isOwner) {
             <button class="filter-tab" data-sort="comments">Most commented</button>
           </div>
           <select id="statusFilter"><option value="all">All statuses</option></select>
-          <input id="search" placeholder="Search feedback... (press /)" title="Press / to search, c to compose" aria-label="Search feedback" />
+          <input id="search" placeholder="Search feedback" title="Press / to search, c to compose" aria-label="Search feedback" />
         </div>
 
         <div id="list" aria-busy="true"><span class="sr-only">Loading feedback</span><div class="skeleton" aria-hidden="true"><div class="sk sk-vote"></div><div class="sk-lines"><div class="sk" style="height:14px;width:62%"></div><div class="sk" style="height:11px;width:88%"></div><div class="sk" style="height:18px;width:34%"></div></div></div><div class="skeleton" aria-hidden="true"><div class="sk sk-vote"></div><div class="sk-lines"><div class="sk" style="height:14px;width:62%"></div><div class="sk" style="height:11px;width:88%"></div><div class="sk" style="height:18px;width:34%"></div></div></div><div class="skeleton" aria-hidden="true"><div class="sk sk-vote"></div><div class="sk-lines"><div class="sk" style="height:14px;width:62%"></div><div class="sk" style="height:11px;width:88%"></div><div class="sk" style="height:18px;width:34%"></div></div></div><div class="skeleton" aria-hidden="true"><div class="sk sk-vote"></div><div class="sk-lines"><div class="sk" style="height:14px;width:62%"></div><div class="sk" style="height:11px;width:88%"></div><div class="sk" style="height:18px;width:34%"></div></div></div></div>
@@ -2083,7 +2089,8 @@ function boardPage(customerSlug, isOwner) {
       all: '<svg class="icon" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>',
       Feature: '<svg class="icon" viewBox="0 0 24 24"><path d="M9 18h6M10 22h4M12 2a6 6 0 0 0-4 10.5c.7.6 1 1.3 1 2.5h6c0-1.2.3-1.9 1-2.5A6 6 0 0 0 12 2z"/></svg>',
       Bug: '<svg class="icon" viewBox="0 0 24 24"><rect x="8" y="7" width="8" height="12" rx="4"/><path d="M12 7V4M9 5l-1.5-1.5M15 5l1.5-1.5M5 11H3M21 11h-2M5 16H3M21 16h-2M8 19l-2 2M16 19l2 2"/></svg>',
-      Feedback: '<svg class="icon" viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-4.8 7.6 8.5 8.5 0 0 1-9.4-1.2L3 21l1.9-4.3a8.38 8.38 0 0 1-1.2-4.4 8.5 8.5 0 0 1 7.6-8.4 8.38 8.38 0 0 1 9.5 7.1 8.5 8.5 0 0 1 .2 1.5z"/></svg>'
+      Feedback: '<svg class="icon" viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-4.8 7.6 8.5 8.5 0 0 1-9.4-1.2L3 21l1.9-4.3a8.38 8.38 0 0 1-1.2-4.4 8.5 8.5 0 0 1 7.6-8.4 8.38 8.38 0 0 1 9.5 7.1 8.5 8.5 0 0 1 .2 1.5z"/></svg>',
+      link: '<svg class="icon" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>'
     };
 
     function render() {
@@ -2140,7 +2147,7 @@ function boardPage(customerSlug, isOwner) {
           (i.tags || []).map(function (t) { return '<span class="tag-chip">#' + escapeHtml(t) + '</span>'; }).join('') +
           '<span class="meta-right">' +
           '<button class="comment-count" data-idea-id="' + i.id + '">' + ICONS.comment + '<span class="cc-num">' + (i.comment_count ? i.comment_count + ' Comment' + (i.comment_count === 1 ? '' : 's') : 'Comments') + '</span></button>' +
-          '<a class="comment-count" href="/b/' + encodeURIComponent(customerSlug) + '/ideas/' + i.id + '" title="Shareable link to this idea">&#128279;</a>' +
+          '<a class="comment-count" href="/b/' + encodeURIComponent(customerSlug) + '/ideas/' + i.id + '" title="Open this idea" aria-label="Open this idea">' + ICONS.link + '</a>' +
           '</span>' +
           '</div>' +
           '<div class="comments" id="comments-' + i.id + '">' +
@@ -3911,6 +3918,13 @@ function analyticsPage(customerSlug, isOwner) {
 </html>`;
 }
 
+const WIDGET_THEME_VARS = `
+    :root { --w-bg: #ffffff; --w-text: #1b1a22; --w-muted: #6b6878; --w-border: #e6e4ee; --w-field: #f6f5fa; --w-shadow: 0 12px 40px rgba(20,18,40,.18); }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) { --w-bg: #16151d; --w-text: #f3f2f7; --w-muted: #9492a3; --w-border: #2a2935; --w-field: #1d1c26; --w-shadow: 0 10px 40px rgba(0,0,0,.45); }
+    }
+    :root[data-theme="dark"] { --w-bg: #16151d; --w-text: #f3f2f7; --w-muted: #9492a3; --w-border: #2a2935; --w-field: #1d1c26; --w-shadow: 0 10px 40px rgba(0,0,0,.45); }`;
+
 function embedJs() {
   return `(function () {
   var cs = document.currentScript;
@@ -3920,7 +3934,8 @@ function embedJs() {
   var color = cs.getAttribute('data-color') || '';
   var position = cs.getAttribute('data-position') || 'bottom-right';
   var targetSelector = cs.getAttribute('data-target') || '';
-  var EXPANDED = { width: '380px', height: 'min(600px, calc(100vh - 40px))' };
+  var theme = cs.getAttribute('data-theme') || '';
+  var EXPANDED = { width: 'min(380px, calc(100vw - 40px))', height: 'min(480px, calc(100vh - 40px))' };
   // In target mode there's no floating bubble to show before it's opened -
   // the customer's own button is the only trigger - so "collapsed" means
   // zero-size and click-through rather than a visible 64px circle.
@@ -3936,6 +3951,7 @@ function embedJs() {
 
   var widgetUrl = origin + '/widget.html?customer=' + encodeURIComponent(customer);
   if (color) widgetUrl += '&color=' + encodeURIComponent(color);
+  if (theme === 'light' || theme === 'dark') widgetUrl += '&theme=' + theme;
 
   var iframe = document.createElement('iframe');
   iframe.src = widgetUrl;
@@ -3953,14 +3969,17 @@ function embedJs() {
   document.body.appendChild(iframe);
 
   window.addEventListener('message', function (e) {
+    if (e.source !== iframe.contentWindow || e.origin !== origin) return;
     if (!e.data || e.data.source !== 'requesthub-widget') return;
     if (e.data.type === 'open') {
       iframe.style.width = EXPANDED.width;
       iframe.style.height = EXPANDED.height;
+      iframe.style.zIndex = '2147483001';
       if (targetSelector) iframe.style.pointerEvents = 'auto';
     } else if (e.data.type === 'close') {
       iframe.style.width = COLLAPSED.width;
       iframe.style.height = COLLAPSED.height;
+      iframe.style.zIndex = '2147483000';
       if (targetSelector) iframe.style.pointerEvents = 'none';
     }
   });
@@ -3975,6 +3994,7 @@ function embedJs() {
       e.preventDefault();
       iframe.style.width = EXPANDED.width;
       iframe.style.height = EXPANDED.height;
+      iframe.style.zIndex = '2147483001';
       iframe.style.pointerEvents = 'auto';
       iframe.contentWindow.postMessage({ source: 'requesthub-host', type: 'open' }, origin);
     });
@@ -4003,6 +4023,8 @@ function changelogEmbedJs() {
 
   var widgetUrl = origin + '/changelog-widget.html?customer=' + encodeURIComponent(customer);
   if (color) widgetUrl += '&color=' + encodeURIComponent(color);
+  var theme = cs.getAttribute('data-theme') || '';
+  if (theme === 'light' || theme === 'dark') widgetUrl += '&theme=' + theme;
 
   var iframe = document.createElement('iframe');
   iframe.src = widgetUrl;
@@ -4019,25 +4041,29 @@ function changelogEmbedJs() {
   document.body.appendChild(iframe);
 
   window.addEventListener('message', function (e) {
+    if (e.source !== iframe.contentWindow || e.origin !== origin) return;
     if (!e.data || e.data.source !== 'requesthub-changelog-widget') return;
     if (e.data.type === 'open') {
       iframe.style.width = EXPANDED.width;
       iframe.style.height = EXPANDED.height;
+      iframe.style.zIndex = '2147483001';
     } else if (e.data.type === 'close') {
       iframe.style.width = COLLAPSED.width;
       iframe.style.height = COLLAPSED.height;
+      iframe.style.zIndex = '2147483000';
     }
   });
 })();`;
 }
 
-function changelogWidgetPage(customerSlug, color) {
+function changelogWidgetPage(customerSlug, color, theme) {
   const accent = color || "#6d5ef8";
   return `<!doctype html>
-<html>
+<html${theme ? ` data-theme="${theme}"` : ""}>
 <head>
   <meta charset="utf-8" />
   <style>
+    ${WIDGET_THEME_VARS}
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; background: transparent; font-family: -apple-system, sans-serif; overflow: hidden; }
     .launcher {
@@ -4049,15 +4075,21 @@ function changelogWidgetPage(customerSlug, color) {
     .launcher .dot { position: absolute; top: 4px; right: 4px; width: 9px; height: 9px; border-radius: 50%; background: #f04438; border: 2px solid #fff; display: none; }
     .launcher.unread .dot { display: block; }
     .panel {
-      display: none; flex-direction: column; height: 100%; background: #16151d; color: #f3f2f7;
-      border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,.4); border: 1px solid #2a2935; overflow: hidden;
+      display: none; flex-direction: column; height: 100%; background: var(--w-bg); color: var(--w-text);
+      border-radius: 14px; box-shadow: var(--w-shadow); border: 1px solid var(--w-border); overflow: hidden;
     }
     body.open .launcher { display: none; }
     body.open .panel { display: flex; }
-    .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #2a2935; }
+    /* The host resizes this iframe on "open"; until it has, never show the
+       panel crushed into the 64px launcher frame. */
+    @media (max-width: 200px) {
+      body.open .panel { display: none; }
+      body.open .launcher { display: flex; }
+    }
+    .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--w-border); }
     .panel-header h1 { font-size: 14px; margin: 0; font-weight: 700; }
-    .panel-close { background: none; border: none; color: #9492a3; cursor: pointer; font-size: 18px; line-height: 1; padding: 2px; }
-    .panel-close:hover { color: #fff; }
+    .panel-close { background: none; border: none; color: var(--w-muted); cursor: pointer; font-size: 18px; line-height: 1; padding: 2px; }
+    .panel-close:hover { color: var(--w-text); }
     .panel-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
     .entry { padding: 0 0 14px; margin-bottom: 14px; border-bottom: 1px solid #242330; }
     .entry:last-child { border-bottom: none; margin-bottom: 0; }
@@ -4065,9 +4097,9 @@ function changelogWidgetPage(customerSlug, color) {
     .entry-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
     .entry-desc { color: #a9a7b5; font-size: 12px; line-height: 1.5; }
     .empty { color: #716f80; font-size: 12.5px; text-align: center; padding: 20px 0; }
-    .panel-footer { padding: 10px 16px; border-top: 1px solid #2a2935; text-align: center; }
-    .panel-footer a { color: #9492a3; font-size: 11.5px; text-decoration: none; }
-    .panel-footer a:hover { color: #fff; }
+    .panel-footer { padding: 10px 16px; border-top: 1px solid var(--w-border); text-align: center; }
+    .panel-footer a { color: var(--w-muted); font-size: 11.5px; text-decoration: none; }
+    .panel-footer a:hover { color: var(--w-text); }
   </style>
 </head>
 <body>
@@ -4095,8 +4127,20 @@ function changelogWidgetPage(customerSlug, color) {
       return d.innerHTML;
     }
 
+    // A single postMessage can be missed (host script still booting, slow
+    // frame load), which left the panel open inside a 64px frame. Re-send
+    // until this frame's own size shows the host acted on it.
+    var resizeRetry = null;
     function post(type) {
-      window.parent.postMessage({ source: 'requesthub-changelog-widget', type: type }, '*');
+      var tries = 0;
+      clearInterval(resizeRetry);
+      var send = function () { window.parent.postMessage({ source: 'requesthub-changelog-widget', type: type }, '*'); };
+      send();
+      resizeRetry = setInterval(function () {
+        var done = type === 'open' ? window.innerWidth > 200 : window.innerWidth <= 200;
+        if (done || ++tries > 20) { clearInterval(resizeRetry); return; }
+        send();
+      }, 250);
     }
 
     document.getElementById('launcher').addEventListener('click', function () {
@@ -4174,13 +4218,14 @@ function unsubscribePage(ok, ideaTitle, error) {
 </html>`;
 }
 
-function widgetPage(customerSlug, color) {
+function widgetPage(customerSlug, color, theme) {
   const accent = color || "#6d5ef8";
   return `<!doctype html>
-<html>
+<html${theme ? ` data-theme="${theme}"` : ""}>
 <head>
   <meta charset="utf-8" />
   <style>
+    ${WIDGET_THEME_VARS}
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; background: transparent; font-family: -apple-system, sans-serif; overflow: hidden; }
     .launcher {
@@ -4190,23 +4235,30 @@ function widgetPage(customerSlug, color) {
     .launcher:hover { filter: brightness(0.93); }
     .launcher svg { width: 26px; height: 26px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     .panel {
-      display: none; flex-direction: column; height: 100%; background: #16151d; color: #f3f2f7;
-      border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,.4); border: 1px solid #2a2935; overflow: hidden;
+      display: none; flex-direction: column; height: 100%; background: var(--w-bg); color: var(--w-text);
+      border-radius: 14px; box-shadow: var(--w-shadow); border: 1px solid var(--w-border); overflow: hidden;
     }
     body.open .launcher { display: none; }
     body.open .panel { display: flex; }
-    .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #2a2935; }
+    /* The host resizes this iframe on "open"; until it has, never show the
+       panel crushed into the 64px launcher frame. */
+    @media (max-width: 200px) {
+      body.open .panel { display: none; }
+      body.open .launcher { display: flex; }
+    }
+    .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--w-border); }
     .panel-header h1 { font-size: 14px; margin: 0; font-weight: 700; }
-    .panel-close { background: none; border: none; color: #9492a3; cursor: pointer; font-size: 18px; line-height: 1; padding: 2px; }
-    .panel-close:hover { color: #fff; }
+    .panel-close { background: none; border: none; color: var(--w-muted); cursor: pointer; font-size: 18px; line-height: 1; padding: 2px; }
+    .panel-close:hover { color: var(--w-text); }
     .panel-body { flex: 1; overflow-y: auto; padding: 16px; }
-    .panel-body p { color: #9492a3; font-size: 12.5px; margin: 0 0 12px; }
+    .panel-body p { color: var(--w-muted); font-size: 12.5px; margin: 0 0 12px; }
     .field { margin-bottom: 10px; }
     .field input, .field textarea {
-      width: 100%; background: #1d1c26; border: 1px solid #2a2935; color: #f3f2f7; border-radius: 8px;
+      width: 100%; background: var(--w-field); border: 1px solid var(--w-border); color: var(--w-text); border-radius: 8px;
       padding: 9px 11px; font-size: 13px; font-family: inherit;
     }
     .field textarea { resize: vertical; min-height: 60px; }
+    .field input:focus, .field textarea:focus { outline: 2px solid ${accent}; outline-offset: -1px; border-color: transparent; }
     .btn-submit {
       width: 100%; background: ${accent}; color: #fff; border: none; padding: 10px; border-radius: 8px;
       font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
@@ -4214,9 +4266,9 @@ function widgetPage(customerSlug, color) {
     .btn-submit:hover { filter: brightness(0.9); }
     .success { text-align: center; padding: 20px 0; }
     .success .check { font-size: 32px; margin-bottom: 8px; }
-    .panel-footer { padding: 10px 16px; border-top: 1px solid #2a2935; text-align: center; }
-    .panel-footer a { color: #9492a3; font-size: 11.5px; text-decoration: none; }
-    .panel-footer a:hover { color: #fff; }
+    .panel-footer { padding: 10px 16px; border-top: 1px solid var(--w-border); text-align: center; }
+    .panel-footer a { color: var(--w-muted); font-size: 11.5px; text-decoration: none; }
+    .panel-footer a:hover { color: var(--w-text); }
   </style>
 </head>
 <body>
@@ -4243,8 +4295,20 @@ function widgetPage(customerSlug, color) {
   <script>
     var customerSlug = ${JSON.stringify(customerSlug).replace(/</g, "\\u003c")};
 
+    // A single postMessage can be missed (host script still booting, slow
+    // frame load), which left the panel open inside a 64px frame. Re-send
+    // until this frame's own size shows the host acted on it.
+    var resizeRetry = null;
     function post(type) {
-      window.parent.postMessage({ source: 'requesthub-widget', type: type }, '*');
+      var tries = 0;
+      clearInterval(resizeRetry);
+      var send = function () { window.parent.postMessage({ source: 'requesthub-widget', type: type }, '*'); };
+      send();
+      resizeRetry = setInterval(function () {
+        var done = type === 'open' ? window.innerWidth > 200 : window.innerWidth <= 200;
+        if (done || ++tries > 20) { clearInterval(resizeRetry); return; }
+        send();
+      }, 250);
     }
 
     document.getElementById('launcher').addEventListener('click', function () {
@@ -4288,6 +4352,7 @@ function widgetPage(customerSlug, color) {
 }
 
 function loginPage(customerSlug, mode, errorMsg, next, isOwner) {
+  if (mode === "locked") return lockedBoardPage(customerSlug);
   const isSetup = mode === "setup";
   const nextPath = next || `/b/${encodeURIComponent(customerSlug)}/admin`;
   return `<!doctype html>
@@ -4395,6 +4460,39 @@ function loginPage(customerSlug, mode, errorMsg, next, isOwner) {
       });
     }
   </script>
+</body>
+</html>`;
+}
+
+function lockedBoardPage(customerSlug) {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin - ${escapeHtml(customerSlug)} - RequestHub</title>
+  ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
+  <style>
+    ${DESIGN_TOKENS}
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { width: 100%; max-width: 380px; margin: 16px; padding: 32px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); box-sizing: border-box; }
+    h1 { font-size: 18px; margin: 0 0 6px; color: var(--text); }
+    p { color: var(--text-muted); font-size: 13px; margin: 0 0 18px; line-height: 1.55; }
+    a.btn { display: block; text-align: center; background: var(--accent); color: #fff; text-decoration: none; padding: 11px; border-radius: var(--radius-btn); font-size: 14px; font-weight: 600; }
+    a.btn:hover { background: var(--accent-hover); }
+    .back { display: block; text-align: center; margin-top: 16px; color: var(--text-muted); font-size: 12.5px; text-decoration: none; }
+    .back:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode" style="position:fixed;top:16px;right:16px;"></button>
+    <h1>The admin side of "${escapeHtml(customerSlug)}" is private</h1>
+    <p>This is a public board, so anyone can submit and vote. Triage, integrations and settings belong to the team that owns it. Want this for your own product? Start a board in under a minute.</p>
+    <a class="btn" href="/signup">Start your own board</a>
+    <a class="back" href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
+  </div>
 </body>
 </html>`;
 }
@@ -4724,7 +4822,8 @@ const app = {
       const customerSlug = url.searchParams.get("customer") || "demo";
       const rawColor = url.searchParams.get("color") || "";
       const color = /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(rawColor) ? rawColor : null;
-      return html(widgetPage(customerSlug, color));
+      const theme = ["light", "dark"].includes(url.searchParams.get("theme")) ? url.searchParams.get("theme") : "";
+      return html(widgetPage(customerSlug, color, theme));
     }
 
     if (request.method === "GET" && url.pathname === "/changelog-embed.js") {
@@ -4737,7 +4836,8 @@ const app = {
       const customerSlug = url.searchParams.get("customer") || "demo";
       const rawColor = url.searchParams.get("color") || "";
       const color = /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(rawColor) ? rawColor : null;
-      return html(changelogWidgetPage(customerSlug, color));
+      const theme = ["light", "dark"].includes(url.searchParams.get("theme")) ? url.searchParams.get("theme") : "";
+      return html(changelogWidgetPage(customerSlug, color, theme));
     }
 
     if (request.method === "GET" && url.pathname === "/unsubscribe") {
@@ -4777,6 +4877,10 @@ const app = {
       if (slug.length < 3) {
         return json({ ok: false, error: "That name doesn't make a usable URL - try adding more letters" }, 400);
       }
+      const signupPassword = (body.password || "").toString();
+      if (signupPassword.length < 8) {
+        return json({ ok: false, error: "Choose an admin password of at least 8 characters" }, 400);
+      }
       const existingOrgId = await getTenantOrgId(env, slug);
       if (existingOrgId) {
         return json({ ok: false, error: `"${slug}" is already taken - try a different name` }, 409);
@@ -4789,7 +4893,14 @@ const app = {
           )
         );
         await callWorkflow(env, SET_CUSTOMER_ORG_WORKFLOW_ID, { customerSlug: slug, orgId: org.id, name });
-        return json({ ok: true, slug });
+        const { hash, salt } = await hashPassword(signupPassword);
+        await callWorkflow(env, SET_CUSTOMER_PASSWORD_WORKFLOW_ID, { customerSlug: slug, hash, salt });
+        const res = json({ ok: true, slug });
+        res.headers.append(
+          "Set-Cookie",
+          `${sessionCookieName(slug)}=${await createSessionToken(env, slug)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`
+        );
+        return res;
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
       }
@@ -4831,7 +4942,7 @@ const app = {
       const isOwner = await requireAuth(request, env, OWNER_SLUG);
       try {
         const auth = await callWorkflow(env, GET_CUSTOMER_AUTH_WORKFLOW_ID, { customerSlug });
-        const mode = auth?.hash ? "login" : "setup";
+        const mode = auth?.hash ? "login" : isOwner ? "setup" : "locked";
         return html(loginPage(customerSlug, mode, errorMsg, null, isOwner));
       } catch (err) {
         return html(loginPage(customerSlug, "login", "Could not check auth status - try again.", null, isOwner));
@@ -4863,6 +4974,12 @@ const app = {
         const existing = await callWorkflow(env, GET_CUSTOMER_AUTH_WORKFLOW_ID, { customerSlug });
         let authenticated;
         if (!existing?.hash) {
+          // Anyone reaching this page first used to become the board's admin.
+          // New boards get their password at signup, so a passwordless board
+          // is a legacy one, and only the product owner may set it.
+          if (!(await requireAuth(request, env, OWNER_SLUG))) {
+            return json({ ok: false, error: "This board has no admin password yet. Only the RequestHub owner can set one." }, 403);
+          }
           const { hash, salt } = await hashPassword(password);
           await callWorkflow(env, SET_CUSTOMER_PASSWORD_WORKFLOW_ID, { customerSlug, hash, salt });
           authenticated = true;

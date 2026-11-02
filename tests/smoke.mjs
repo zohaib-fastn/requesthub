@@ -335,6 +335,32 @@ async function run() {
     assert(r.status === 401 || body.ok === false, "invalid status change should be rejected (got " + JSON.stringify(body) + ")");
   });
 
+  console.log("\nBoard takeover protection:");
+  await check("a visitor cannot set the first admin password of a passwordless board", async () => {
+    const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/auth", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: "takeover-attempt-123" }),
+    });
+    assert(r.status === 403, "status " + r.status + " - first-come password claim must be refused");
+  });
+  await check("a passwordless board's admin page offers signup, not a password form", async () => {
+    const r = await fetch(BASE_URL + "/b/" + CUSTOMER + "/login");
+    const text = await r.text();
+    assert(r.status === 200, "status " + r.status);
+    assert(!text.includes("Set your admin password"), "still offers to set the admin password");
+    assert(text.includes("/signup"), "no path to start a board");
+  });
+  await check("signup requires an admin password", async () => {
+    const r = await fetch(BASE_URL + "/api/signup", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "smoke no password " + Date.now() }),
+    });
+    const body = await r.json();
+    assert(r.status === 400 && body.ok === false, "expected 400, got " + r.status);
+  });
+
   console.log("\nAdmin routes correctly require auth (expect 401/302, no session sent):");
   await check("admin triage page redirects to login", async () => {
     const r = await fetch(BASE_URL + "/b/" + CUSTOMER + "/admin", { redirect: "manual" });
