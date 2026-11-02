@@ -1719,6 +1719,11 @@ function boardPage(customerSlug, isOwner) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${escapeHtml(customerSlug)} - RequestHub</title>
+  <meta name="description" content="Share feedback, vote on ideas, and see what's planned for ${escapeHtml(customerSlug)}." />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="${escapeHtml(customerSlug)} - RequestHub" />
+  <meta property="og:description" content="Share feedback, vote on ideas, and see what's planned for ${escapeHtml(customerSlug)}." />
+  <meta name="twitter:card" content="summary" />
   <link rel="icon" href="${favicon}" />
   ${DESIGN_FONT_LINK}
   <script>${THEME_TOGGLE_SCRIPT}</script>
@@ -2445,13 +2450,24 @@ function boardPage(customerSlug, isOwner) {
 </html>`;
 }
 
-function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin) {
+function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin, metaTitle, metaDescription) {
+  const pageTitle = metaTitle ? `${metaTitle} - ${customerSlug}` : `Idea - ${customerSlug}`;
+  const pageDescription = metaDescription
+    ? metaDescription.length > 200 ? metaDescription.slice(0, 197) + "..." : metaDescription
+    : `View and vote on this idea on ${customerSlug}'s feedback board.`;
   return `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Idea - ${escapeHtml(customerSlug)} - RequestHub</title>
+  <title>${escapeHtml(pageTitle)} - RequestHub</title>
+  <meta name="description" content="${escapeHtml(pageDescription)}" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="${escapeHtml(pageTitle)} - RequestHub" />
+  <meta property="og:description" content="${escapeHtml(pageDescription)}" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="${escapeHtml(pageTitle)} - RequestHub" />
+  <meta name="twitter:description" content="${escapeHtml(pageDescription)}" />
   ${DESIGN_FONT_LINK}
   <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
@@ -2925,6 +2941,11 @@ function roadmapPage(customerSlug, isOwner) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Roadmap - ${escapeHtml(customerSlug)} - RequestHub</title>
+  <meta name="description" content="See what's under review, planned, in progress, and shipped on ${escapeHtml(customerSlug)}'s roadmap." />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Roadmap - ${escapeHtml(customerSlug)} - RequestHub" />
+  <meta property="og:description" content="See what's under review, planned, in progress, and shipped on ${escapeHtml(customerSlug)}'s roadmap." />
+  <meta name="twitter:card" content="summary" />
   ${DESIGN_FONT_LINK}
   <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
@@ -3079,6 +3100,11 @@ function changelogPage(customerSlug, isOwner) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Changelog - ${escapeHtml(customerSlug)} - RequestHub</title>
+  <meta name="description" content="See what's recently shipped on ${escapeHtml(customerSlug)}'s changelog." />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Changelog - ${escapeHtml(customerSlug)} - RequestHub" />
+  <meta property="og:description" content="See what's recently shipped on ${escapeHtml(customerSlug)}'s changelog." />
+  <meta name="twitter:card" content="summary" />
   <link rel="alternate" type="application/rss+xml" title="${escapeHtml(customerSlug)} changelog" href="/b/${encodeURIComponent(customerSlug)}/changelog.rss" />
   ${DESIGN_FONT_LINK}
   <script>${THEME_TOGGLE_SCRIPT}</script>
@@ -4612,7 +4638,23 @@ export default {
     if (request.method === "GET" && ideaDetailMatch) {
       const isOwner = await requireAuth(request, env, OWNER_SLUG);
       const isAdmin = await requireAuth(request, env, ideaDetailMatch[1]);
-      return html(ideaDetailPage(ideaDetailMatch[1], ideaDetailMatch[2], isOwner, isAdmin));
+      // Server-fetched once, just for <title>/meta tags - the page's own
+      // client-side JS still does its normal fetch to actually render the
+      // idea. Without this, every single idea on every board shared a
+      // generic "Idea - demo - RequestHub" title no matter which idea you
+      // linked to, so a shared permalink was indistinguishable from any
+      // other idea's link in a browser tab, bookmark, or chat unfurl.
+      let metaTitle = null;
+      let metaDescription = null;
+      try {
+        const listData = await callWorkflow(env, LIST_WORKFLOW_ID, { customerSlug: ideaDetailMatch[1] });
+        const found = (listData?.ideas || []).find((i) => i.id === Number(ideaDetailMatch[2]));
+        if (found) {
+          metaTitle = found.title;
+          metaDescription = found.description || null;
+        }
+      } catch {}
+      return html(ideaDetailPage(ideaDetailMatch[1], ideaDetailMatch[2], isOwner, isAdmin, metaTitle, metaDescription));
     }
 
     const loginMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/login\/?$/);
