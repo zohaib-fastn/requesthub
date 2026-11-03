@@ -22,6 +22,7 @@ const REMOVE_USER_WORKFLOW_ID = "wf_dccff8e93fa9";
 const REGISTER_LINEAR_WEBHOOK_WORKFLOW_ID = "wf_55825cf21bfc";
 const UNREGISTER_LINEAR_WEBHOOK_WORKFLOW_ID = "wf_9633b10b01af";
 const LINEAR_RELAY_WORKFLOW_ID = "wf_8599e74300aa";
+const LINEAR_ISSUE_STATE_WORKFLOW_ID = "wf_1a41aa3036d6";
 const FIND_IDEA_BY_LINEAR_ISSUE_WORKFLOW_ID = "wf_bc7a52df867b";
 const GET_LINEAR_WEBHOOK_SECRET_WORKFLOW_ID = "wf_c376837b8860";
 const CREATE_WEBHOOK_WORKFLOW_ID = "wf_e13c16fac3dc";
@@ -680,6 +681,101 @@ function developersPage(origin) {
   </div>
 </body>
 </html>`;
+}
+
+// What the board's tools sent us through Fastn (Linear webhooks, Slack
+// mentions), with what happened to each, so a board admin can send a failed
+// one again from Settings: Fastn's event replay, run replay and dead-letter
+// retry, scoped on the server to this board's own triggers.
+async function boardTriggers(env, customerSlug, endOrgId) {
+  const triggers = [];
+  const linear = await fastnApi(env, "GET", `/api/v1/webhooks/${linearRelayTriggerId(customerSlug)}`);
+  if (linear.status < 300 && linear.data?.id) {
+    triggers.push({ id: linearRelayTriggerId(customerSlug), source: "Linear", workflowId: LINEAR_RELAY_WORKFLOW_ID, customer: null });
+  }
+  if (endOrgId) {
+    const app = await fastnApi(env, "GET", `/api/v1/app-triggers?end_org_id=${encodeURIComponent(endOrgId)}&limit=100`);
+    for (const t of Array.isArray(app.data) ? app.data : []) {
+      if ((t.appTrigger?.routes || []).some((r) => r.routeId === SLACK_CAPTURE_WORKFLOW_ID)) {
+        triggers.push({ id: t.id, source: "Slack", workflowId: SLACK_CAPTURE_WORKFLOW_ID, customer: endOrgId });
+      }
+    }
+  }
+  return triggers;
+}
+
+function deliverySummary(source, payload) {
+  const p = payload || {};
+  if (source === "Linear") {
+    const d = p.data || {};
+    const what = [d.identifier, d.title].filter(Boolean).join(" ") || p.type || "Linear event";
+    return d.state?.name ? `${what} - ${d.state.name}` : what;
+  }
+  const text = String(p.event?.text || p.text || "Slack event").replace(/<@[A-Z0-9]+>/g, "").replace(/\s+/g, " ").trim();
+  return text.length > 90 ? text.slice(0, 87) + "..." : text;
+}
+
+async function boardDeliveries(env, customerSlug) {
+  const endOrgId = await getTenantOrgId(env, customerSlug);
+  const triggers = await boardTriggers(env, customerSlug, endOrgId);
+  const rows = [];
+  await Promise.all(
+    triggers.map(async (t) => {
+      const evQuery = `triggerId=${encodeURIComponent(t.id)}&limit=15${t.customer ? `&customer=${encodeURIComponent(t.customer)}` : ""}`;
+      const [ev, runs, mon] = await Promise.all([
+        fastnApi(env, "GET", `/api/v1/events?${evQuery}`),
+        fastnApi(env, "GET", `/api/v1/workflows/executions?triggerId=${encodeURIComponent(t.id)}&workflowId=${t.workflowId}&limit=40`),
+        fastnApi(env, "GET", `/api/v1/triggers/${encodeURIComponent(t.id)}/monitoring?dlqLimit=20`),
+      ]);
+      const runByEvent = new Map();
+      for (const r of Array.isArray(runs.data) ? runs.data : []) {
+        const e = r.requestHeaders?.["x-fastn-event-id"];
+        if (e && !runByEvent.has(e)) runByEvent.set(e, r);
+      }
+      const dlqByEvent = new Map();
+      for (const d of mon.data?.dlq?.entries || []) {
+        if (d.request?.eventId) dlqByEvent.set(d.request.eventId, d);
+      }
+      for (const e of Array.isArray(ev.data) ? ev.data : []) {
+        const run = runByEvent.get(e.id);
+        const dlq = dlqByEvent.get(e.id);
+        const runFailed = run && (run.status === "failed" || run.status === "timeout" || (run.statusCode || 0) >= 400);
+        rows.push({
+          eventId: e.id,
+          source: t.source,
+          receivedAt: e.receivedAt,
+          summary: deliverySummary(t.source, e.payload),
+          state: dlq ? "failed" : runFailed ? "failed" : run ? (run.status === "completed" ? "delivered" : run.status) : e.status === "dispatched" ? "in progress" : e.status,
+          run: run ? { id: run.id, workflowId: run.workflowId, status: run.status } : null,
+          deadLetter: dlq ? { id: dlq.id, status: dlq.status } : null,
+          replayedAt: e.replayedAt || null,
+        });
+      }
+    })
+  );
+  rows.sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt)));
+  return { rows: rows.slice(0, 25), sources: triggers.map((t) => t.source) };
+}
+
+// kind: "event" sends the stored event through its trigger again, "run"
+// re-runs the failed execution, "deadLetter" retries the dead-lettered
+// dispatch. The id must belong to one of this board's own deliveries.
+async function replayBoardDelivery(env, customerSlug, kind, id) {
+  const { rows } = await boardDeliveries(env, customerSlug);
+  const row = rows.find((r) => (kind === "event" && r.eventId === id) || (kind === "run" && r.run?.id === id) || (kind === "deadLetter" && r.deadLetter?.id === id));
+  if (!row) return { status: 404, body: { ok: false, error: "that delivery is not one of this board's" } };
+  const path =
+    kind === "event"
+      ? `/api/v1/events/${encodeURIComponent(id)}/replay`
+      : kind === "run"
+        ? `/api/v1/workflows/${encodeURIComponent(row.run.workflowId)}/executions/${encodeURIComponent(id)}/replay`
+        : `/api/v1/dlq/${encodeURIComponent(id)}/replay`;
+  const r = await fastnApi(env, "POST", path);
+  if (r.status >= 300) {
+    const msg = r.data?.error?.message || r.data?.error || `Fastn answered ${r.status}`;
+    return { status: 502, body: { ok: false, error: typeof msg === "string" ? msg : JSON.stringify(msg) } };
+  }
+  return { status: 200, body: { ok: true, kind, result: r.data } };
 }
 
 async function callWorkflow(env, workflowId, input, endOrgId) {
@@ -1972,6 +2068,77 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
       <button type="button" class="btn-submit" id="linearSyncToggleBtn" style="${settings.linearWebhookEnabled ? "background: var(--bad);" : ""}">${settings.linearWebhookEnabled ? "Turn off" : "Turn on"}</button>`
         : `<p class="hint">Connect a Linear team above and save, then come back here to turn on real-time sync.</p>`}
     </div>
+
+    <div class="card" id="deliveriesCard" data-testid="deliveries-card">
+      <h2>Deliveries from your tools</h2>
+      <p class="hint">Every Linear update and Slack mention that reached your board through Fastn, and what happened to it. If one failed, send it again: a Linear update re-syncs that issue's current status from Linear, and a Slack mention is filed if it isn't already.</p>
+      <div id="deliveriesList"><p class="team-empty">Loading deliveries...</p></div>
+      <button type="button" class="btn-copy" id="deliveriesRefresh" style="margin-top:10px;">Refresh</button>
+    </div>
+    <script>
+      (function () {
+        var slug = ${JSON.stringify(customerSlug).replace(/</g, "\\u003c")};
+        var list = document.getElementById('deliveriesList');
+        function esc(s) { var d = document.createElement('div'); d.innerText = s == null ? '' : String(s); return d.innerHTML; }
+        function when(iso) {
+          var t = new Date(iso); if (isNaN(t)) return '';
+          var mins = Math.round((Date.now() - t.getTime()) / 60000);
+          if (mins < 1) return 'just now';
+          if (mins < 60) return mins + ' min ago';
+          if (mins < 1440) return Math.round(mins / 60) + ' h ago';
+          return t.toLocaleDateString();
+        }
+        var tone = { delivered: 'var(--good)', failed: 'var(--bad)' };
+        function action(r) {
+          if (r.deadLetter) return { kind: 'deadLetter', id: r.deadLetter.id, label: 'Retry' };
+          if (r.state === 'failed' && r.run) return { kind: 'run', id: r.run.id, label: 'Re-run' };
+          return { kind: 'event', id: r.eventId, label: 'Send again' };
+        }
+        function load() {
+          fetch('/api/customers/' + encodeURIComponent(slug) + '/deliveries')
+            .then(function (res) { return res.json(); })
+            .then(function (d) {
+              if (!d.ok) { list.innerHTML = '<p class="team-empty">Could not load deliveries right now.</p>'; return; }
+              if (!d.rows.length) {
+                list.innerHTML = '<p class="team-empty">' + (d.sources.length ? 'Nothing has arrived yet.' : 'Turn on Linear sync or connect Slack and deliveries will show up here.') + '</p>';
+                return;
+              }
+              list.innerHTML = d.rows.map(function (r) {
+                var a = action(r);
+                return '<div class="team-row" data-testid="delivery-row">' +
+                  '<div style="min-width:0;flex:1;">' +
+                    '<div style="font-weight:600;overflow-wrap:anywhere;"><span style="color:var(--text-faint);font-weight:600;">' + esc(r.source) + '</span> &middot; ' + esc(r.summary) + '</div>' +
+                    '<div style="font-size:11.5px;color:' + (tone[r.state] || 'var(--text-faint)') + ';">' + esc(r.state) + ' &middot; ' + esc(when(r.receivedAt)) + (r.replayedAt ? ' &middot; sent again ' + esc(when(r.replayedAt)) : '') + '</div>' +
+                  '</div>' +
+                  '<button type="button" class="btn-copy" data-kind="' + a.kind + '" data-id="' + esc(a.id) + '" style="padding:3px 9px;font-size:11px;white-space:nowrap;">' + a.label + '</button>' +
+                '</div>';
+              }).join('');
+            })
+            .catch(function () { list.innerHTML = '<p class="team-empty">Could not load deliveries right now.</p>'; });
+        }
+        list.addEventListener('click', function (e) {
+          var btn = e.target.closest('button[data-kind]');
+          if (!btn || btn.disabled) return;
+          btn.disabled = true;
+          var label = btn.textContent;
+          btn.textContent = 'Sending...';
+          fetch('/api/customers/' + encodeURIComponent(slug) + '/deliveries/replay', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ kind: btn.getAttribute('data-kind'), id: btn.getAttribute('data-id') }),
+          })
+            .then(function (res) { return res.json(); })
+            .then(function (d) {
+              btn.textContent = d.ok ? 'Sent' : 'Failed';
+              if (!d.ok) btn.title = d.error || '';
+              setTimeout(load, 2500);
+            })
+            .catch(function () { btn.textContent = label; btn.disabled = false; });
+        });
+        document.getElementById('deliveriesRefresh').addEventListener('click', load);
+        load();
+      })();
+    </script>
 
     <div class="card">
       <h2>Embed on your own site</h2>
@@ -6316,6 +6483,33 @@ const app = {
       return json({ ok: true, resynced: isSlack ? ["slack-capture"] : [] });
     }
 
+    const deliveriesMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/deliveries$/);
+    if (request.method === "GET" && deliveriesMatch) {
+      const customerSlug = deliveriesMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) return json({ ok: false, error: "unauthorized" }, 401);
+      try {
+        return json({ ok: true, ...(await boardDeliveries(env, customerSlug)) }, 200, { "cache-control": "no-store" });
+      } catch (err) {
+        return json({ ok: false, error: err.message, rows: [] }, 502);
+      }
+    }
+
+    const deliveryReplayMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/deliveries\/replay$/);
+    if (request.method === "POST" && deliveryReplayMatch) {
+      const customerSlug = deliveryReplayMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) return json({ ok: false, error: "unauthorized" }, 401);
+      const body = await request.json().catch(() => ({}));
+      if (!["event", "run", "deadLetter"].includes(body.kind) || typeof body.id !== "string" || !body.id) {
+        return json({ ok: false, error: "kind (event, run or deadLetter) and id are required" }, 400);
+      }
+      try {
+        const r = await replayBoardDelivery(env, customerSlug, body.kind, body.id);
+        return json(r.body, r.status);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
     const settingsMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/settings\/?$/);
     if (request.method === "GET" && settingsMatch) {
       const customerSlug = settingsMatch[1];
@@ -6638,7 +6832,14 @@ const app = {
         const secretData = await callWorkflow(env, GET_LINEAR_WEBHOOK_SECRET_WORKFLOW_ID, { customerSlug });
         secret = secretData?.secret || null;
       } catch {}
-      if (!secret || !(await verifyLinearWebhookSignature(secret, rawBody, signature))) {
+      const signed = Boolean(secret) && (await verifyLinearWebhookSignature(secret, rawBody, signature));
+      // A replay through Fastn arrives without Linear's signature (Fastn strips
+      // signatures from stored events). Such a delivery is not trusted for its
+      // contents: RequestHub asks Linear for the issue's state now and applies
+      // that, so a replay re-syncs and a forged event cannot change anything
+      // that is not already true in Linear.
+      const relayResync = !signed && request.headers.get("x-rh-relay") === "fastn";
+      if (!signed && !relayResync) {
         return json({ ok: false, error: "invalid signature" }, 401);
       }
 
@@ -6647,6 +6848,19 @@ const app = {
         payload = JSON.parse(rawBody);
       } catch {
         return json({ ok: false, error: "invalid JSON body" }, 400);
+      }
+      if (relayResync) {
+        if (payload.type !== "Issue" || !payload.data?.id) {
+          return json({ ok: true, skipped: "not an issue event" });
+        }
+        const endOrgIdForLinear = await getTenantOrgId(env, customerSlug);
+        const live = endOrgIdForLinear
+          ? await callWorkflow(env, LINEAR_ISSUE_STATE_WORKFLOW_ID, { issueId: payload.data.id }, endOrgIdForLinear).catch(() => null)
+          : null;
+        if (!live?.ok || !live.state?.id) {
+          return json({ ok: false, error: "could not read the issue's current state from Linear" }, 502);
+        }
+        payload = { type: "Issue", action: "resync", data: { id: live.issueId, state: live.state } };
       }
 
       // Linear expects a fast 200 ack - every branch below that isn't a bad
@@ -6709,7 +6923,7 @@ const app = {
         if (data?.idea) {
           deliverWebhooks(env, ctx, customerSlug, "idea.status_changed", data.idea);
         }
-        return json({ ok: true, data });
+        return json({ ok: true, ...(relayResync ? { resyncedFromLinear: true } : {}), data });
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
       }

@@ -420,6 +420,18 @@ async function run() {
     const d = await r.json();
     assert(r.status === 200 && d.ok && d.idea && d.idea.mergedInto === null, JSON.stringify(d));
   });
+  await check("tool deliveries list requires auth", async () => {
+    const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/deliveries");
+    assert(r.status === 401, "status " + r.status);
+  });
+  await check("replaying a delivery requires auth", async () => {
+    const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/deliveries/replay", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: "event", id: "evt_x" }) });
+    assert(r.status === 401, "status " + r.status);
+  });
+  await check("Fastn embed token requires auth", async () => {
+    const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/fastn-token", { method: "POST" });
+    assert(r.status === 401, "status " + r.status);
+  });
   await check("webhooks list requires auth", async () => {
     const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/webhooks");
     assert(r.status === 401, "status " + r.status);
