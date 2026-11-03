@@ -353,6 +353,7 @@ async function syncSlackCaptureForTenant(env, org, wanted, verifyWorkspace) {
 // Free keeps the three tools the product is built around; paid plans raise
 // the ceilings.
 const PARTNER_ORG_ID = "personal_zohaib-hamdani-cs-gmail";
+const TIER_SYNC_CRON = "7 * * * *";
 const CORE_CONNECTOR_IDS = [
   "8de5d696-5289-4c9c-ade4-de918d019d06", // Slack
   "bf147dd1-e0b5-47af-a2d5-d3187a83e0f6", // Linear
@@ -387,19 +388,26 @@ async function setCustomerTier(env, endOrgId, plan) {
 }
 
 // Every board with a Fastn tenant gets the tier of its current plan.
+// Runs on its own cron so it has a Worker invocation's subrequest budget to
+// itself: one org listing instead of a lookup per board, and one write per
+// board (Fastn ignores a key re-sent with its stored value).
 async function syncCustomerTiers(env) {
   const catalogue = await ensureTierCatalogue(env);
-  const data = await callWorkflow(env, LIST_CUSTOMERS_WORKFLOW_ID, {});
+  const [data, orgsRes] = await Promise.all([
+    callWorkflow(env, LIST_CUSTOMERS_WORKFLOW_ID, {}),
+    fastnApi(env, "GET", "/api/v1/orgs?type=end_org"),
+  ]);
   if (!Array.isArray(data?.customers)) throw new Error("customer list unavailable");
+  if (orgsRes.status >= 300 || !Array.isArray(orgsRes.data)) throw new Error(`listing tenants failed (HTTP ${orgsRes.status})`);
+  const orgIdBySlug = new Map(orgsRes.data.map((o) => [o.slug, o.id]));
+  for (const [slug, id] of Object.entries(TENANT_ORG_IDS)) orgIdBySlug.set(slug, id);
   const results = await Promise.all(
     data.customers.map(async (c) => {
-      const endOrgId = await getTenantOrgId(env, c.slug);
+      const endOrgId = orgIdBySlug.get(c.slug);
       if (!endOrgId) return { slug: c.slug, tier: null };
-      try {
-        return { slug: c.slug, tier: await setCustomerTier(env, endOrgId, c.plan) };
-      } catch (err) {
-        return { slug: c.slug, error: err.message };
-      }
+      const tier = tierForPlan(c.plan);
+      const r = await fastnApi(env, "PUT", `/api/v1/orgs/${encodeURIComponent(endOrgId)}/config`, { tier });
+      return r.status < 300 ? { slug: c.slug, tier } : { slug: c.slug, error: `HTTP ${r.status}: ${JSON.stringify(r.data).slice(0, 160)}` };
     })
   );
   return { catalogue, customers: results };
@@ -7330,13 +7338,14 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    if (new Date(event.scheduledTime).getUTCMinutes() < 15) {
+    if (event.cron === TIER_SYNC_CRON) {
       ctx.waitUntil(
         syncCustomerTiers(env).then((r) => {
           const problems = r.customers.filter((c) => c.error);
           if (problems.length) console.error("customer tier sync", JSON.stringify(problems));
-        })
+        }, (err) => console.error("customer tier sync failed", err.message))
       );
+      return;
     }
     ctx.waitUntil(
       syncSlackCaptureTriggers(env).then((tenants) => {
