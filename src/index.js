@@ -347,6 +347,64 @@ async function syncSlackCaptureForTenant(env, org, wanted, verifyWorkspace) {
   return "on";
 }
 
+// RequestHub plans become Fastn customer tiers, so Fastn itself enforces how
+// much a customer can connect inside the embedded hub: the catalogue lives on
+// our org's config (customer_tiers) and each customer org names its tier.
+// Free keeps the three tools the product is built around; paid plans raise
+// the ceilings.
+const PARTNER_ORG_ID = "personal_zohaib-hamdani-cs-gmail";
+const CORE_CONNECTOR_IDS = [
+  "8de5d696-5289-4c9c-ade4-de918d019d06", // Slack
+  "bf147dd1-e0b5-47af-a2d5-d3187a83e0f6", // Linear
+  "5e9b70b5-25cd-43ae-bcbb-a26ea01f4dbf", // Notion
+];
+const CUSTOMER_TIERS = [
+  { id: "free", name: "Free", roleId: "end_user", limits: { connections: 3, integrations: 3, users: 2 }, resources: { connectors: { only: CORE_CONNECTOR_IDS } } },
+  { id: "growth", name: "Growth", roleId: "end_user", limits: { connections: 6, integrations: 6, users: 10 } },
+  { id: "scale", name: "Scale", roleId: "end_user", limits: { connections: 20, integrations: 20, users: 50 } },
+];
+
+function tierForPlan(plan) {
+  return CUSTOMER_TIERS.some((t) => t.id === plan) ? plan : "free";
+}
+
+async function ensureTierCatalogue(env) {
+  const current = await fastnApi(env, "GET", `/api/v1/orgs/${PARTNER_ORG_ID}/config`);
+  if (current.status >= 300) throw new Error(`reading our org config failed (HTTP ${current.status})`);
+  if (JSON.stringify(current.data?.customer_tiers ?? null) === JSON.stringify(CUSTOMER_TIERS)) return "unchanged";
+  const r = await fastnApi(env, "PUT", `/api/v1/orgs/${PARTNER_ORG_ID}/config`, { customer_tiers: CUSTOMER_TIERS });
+  if (r.status >= 300) throw new Error(`writing customer tiers failed (HTTP ${r.status}): ${JSON.stringify(r.data).slice(0, 300)}`);
+  return "written";
+}
+
+async function setCustomerTier(env, endOrgId, plan) {
+  const tier = tierForPlan(plan);
+  const current = await fastnApi(env, "GET", `/api/v1/orgs/${encodeURIComponent(endOrgId)}/config`);
+  if (current.status < 300 && current.data?.tier === tier) return tier;
+  const r = await fastnApi(env, "PUT", `/api/v1/orgs/${encodeURIComponent(endOrgId)}/config`, { tier });
+  if (r.status >= 300) throw new Error(`setting tier failed (HTTP ${r.status}): ${JSON.stringify(r.data).slice(0, 200)}`);
+  return tier;
+}
+
+// Every board with a Fastn tenant gets the tier of its current plan.
+async function syncCustomerTiers(env) {
+  const catalogue = await ensureTierCatalogue(env);
+  const data = await callWorkflow(env, LIST_CUSTOMERS_WORKFLOW_ID, {});
+  if (!Array.isArray(data?.customers)) throw new Error("customer list unavailable");
+  const results = await Promise.all(
+    data.customers.map(async (c) => {
+      const endOrgId = await getTenantOrgId(env, c.slug);
+      if (!endOrgId) return { slug: c.slug, tier: null };
+      try {
+        return { slug: c.slug, tier: await setCustomerTier(env, endOrgId, c.plan) };
+      } catch (err) {
+        return { slug: c.slug, error: err.message };
+      }
+    })
+  );
+  return { catalogue, customers: results };
+}
+
 // scope.slug narrows the sweep to one board whose admin is signed in, which
 // also proves that slug is a real board without asking the customer list.
 // scope.endOrgId narrows it to the tenant a Fastn connection event named.
@@ -1042,6 +1100,7 @@ async function provisionFastnTenant(env, slug, name) {
     CONNECT_WIDGETS.map((w) => createInstallationForTenant(env, w.widgetId, org.id, `${slug} - Connect ${w.name}`))
   );
   await callWorkflow(env, SET_CUSTOMER_ORG_WORKFLOW_ID, { customerSlug: slug, orgId: org.id, name });
+  await setCustomerTier(env, org.id, "free").catch(() => {});
   return org.id;
 }
 
@@ -6175,6 +6234,10 @@ const app = {
       }
       try {
         const data = await callWorkflow(env, SET_CUSTOMER_PLAN_WORKFLOW_ID, { customerSlug, plan: body.plan });
+        if (data?.ok !== false) {
+          const endOrgId = await getTenantOrgId(env, customerSlug);
+          if (endOrgId) ctx.waitUntil(ensureTierCatalogue(env).then(() => setCustomerTier(env, endOrgId, body.plan)).catch(() => {}));
+        }
         return json(data);
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
@@ -7267,6 +7330,14 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
+    if (new Date(event.scheduledTime).getUTCMinutes() < 15) {
+      ctx.waitUntil(
+        syncCustomerTiers(env).then((r) => {
+          const problems = r.customers.filter((c) => c.error);
+          if (problems.length) console.error("customer tier sync", JSON.stringify(problems));
+        })
+      );
+    }
     ctx.waitUntil(
       syncSlackCaptureTriggers(env).then((tenants) => {
         const problems = tenants.filter((t) => t.error);
