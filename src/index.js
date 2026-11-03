@@ -5140,6 +5140,29 @@ function adminPage(customerSlug, isOwner) {
     // New ideas arrive from the widget, Slack and the API while this page is
     // open, and AI triage lands a few seconds after each one - so the board
     // re-reads itself, except while someone is mid-edit or has a selection.
+    // Ideas filed straight into Fastn (a Slack mention) never pass through the
+    // submit route that starts AI triage, so a recent one still without it is
+    // triaged here - once per idea per page, a few at a time.
+    var triageRequested = new Set();
+    function triageRecent() {
+      var pending = allIdeas.filter(function (i) {
+        var age = Date.now() - new Date(i.created_at).getTime();
+        // Under 20 s the submit route's own triage is usually still running.
+        return !i.ai_summary && !triageRequested.has(i.id) && age > 20000 && age < 30 * 60000;
+      }).slice(0, 3);
+      if (!pending.length) return;
+      pending.forEach(function (i) { triageRequested.add(i.id); });
+      pending.reduce(function (chain, i) {
+        return chain.then(function () {
+          return fetch('/api/ideas/' + i.id + '/ai-triage', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ customerSlug: customerSlug }),
+          }).catch(function () {});
+        });
+      }, Promise.resolve()).then(function () { load(); });
+    }
+
     var refreshTimer = null;
     function scheduleRefresh() {
       clearTimeout(refreshTimer);
@@ -5164,6 +5187,7 @@ function adminPage(customerSlug, isOwner) {
           render();
           renderBulkBar();
           scheduleRefresh();
+          triageRecent();
         })
         .catch(function () {
           document.getElementById('board').innerHTML =
