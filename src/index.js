@@ -942,6 +942,7 @@ async function maybeAutoPromote(env, ctx, baseUrl, idea) {
         status: "planned",
         linearTeamId: settings?.linearTeamId || DEFAULT_LINEAR_TEAM_ID,
         notionPageId: settings?.notionPageId || DEFAULT_NOTION_PAGE_ID,
+        slackChannel: settings?.slackChannel || "",
         linearStateIds: settings?.linearStateIds || {},
         baseUrl,
       },
@@ -7021,6 +7022,7 @@ const app = {
             status: mappedStatus,
             linearTeamId: settings?.linearTeamId || DEFAULT_LINEAR_TEAM_ID,
             notionPageId: settings?.notionPageId || DEFAULT_NOTION_PAGE_ID,
+            slackChannel: settings?.slackChannel || "",
             // This status change originated in Linear - pushing it back would
             // just be echoing Linear's own state back at itself.
             syncToLinearState: false,
@@ -7092,6 +7094,7 @@ const app = {
             submitterEmail: body.submitterEmail || "",
             tags: Array.isArray(body.tags) ? body.tags : [],
             ...(slackChannel ? { slackChannel } : {}),
+            baseUrl: url.origin,
           },
           endOrgId,
           scopedIdempotencyKey(request.headers.get("idempotency-key") || body.idempotencyKey, `idea:${submitCustomerSlug}`)
@@ -7324,6 +7327,7 @@ const app = {
             status: body.status,
             linearTeamId: body.linearTeamId || settings?.linearTeamId || DEFAULT_LINEAR_TEAM_ID,
             notionPageId: body.notionPageId || settings?.notionPageId || DEFAULT_NOTION_PAGE_ID,
+            slackChannel: settings?.slackChannel || "",
             linearStateIds: settings?.linearStateIds || {},
             baseUrl: url.origin,
           },
@@ -7533,6 +7537,7 @@ const app = {
               submitterEmail: body.submitterEmail || "",
               tags: Array.isArray(body.tags) ? body.tags : [],
               ...(slackChannel ? { slackChannel } : {}),
+              baseUrl: url.origin,
             },
             endOrgId,
             scopedIdempotencyKey(request.headers.get("idempotency-key"), `api-idea:${apiCustomerSlug}`)
@@ -7618,6 +7623,7 @@ const app = {
               status: body.status,
               linearTeamId: settings?.linearTeamId || DEFAULT_LINEAR_TEAM_ID,
               notionPageId: settings?.notionPageId || DEFAULT_NOTION_PAGE_ID,
+              slackChannel: settings?.slackChannel || "",
               linearStateIds: settings?.linearStateIds || {},
               baseUrl: url.origin,
             },
