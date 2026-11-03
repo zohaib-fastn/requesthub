@@ -443,6 +443,179 @@ async function runWorkflow(env, workflowId, input, endOrgId, idempotencyKey) {
   }
 }
 
+// Public description of the partner API, so a customer's developers (and
+// tools such as Fastn's connector builder) can integrate without reading code.
+function partnerOpenApi(origin) {
+  const idea = {
+    type: "object",
+    properties: {
+      id: { type: "integer" },
+      customer_slug: { type: "string", description: "The board the idea belongs to (your board)." },
+      title: { type: "string" },
+      description: { type: "string" },
+      category: { type: "string", example: "Feature" },
+      status: { type: "string", enum: STATUSES },
+      votes: { type: "integer" },
+      tags: { type: "array", items: { type: "string" } },
+      is_pinned: { type: "boolean" },
+      submitter_email: { type: "string", nullable: true },
+      linear_issue_url: { type: "string", nullable: true },
+      created_at: { type: "string", format: "date-time" },
+    },
+  };
+  const err = { type: "object", properties: { ok: { type: "boolean", example: false }, error: { type: "string" } } };
+  const idParam = { name: "id", in: "path", required: true, schema: { type: "integer" } };
+  const errors = {
+    401: { description: "Missing or invalid API key", content: { "application/json": { schema: err } } },
+    502: { description: "Upstream failure; safe to retry (use Idempotency-Key on creates)", content: { "application/json": { schema: err } } },
+  };
+  return {
+    openapi: "3.0.3",
+    info: {
+      title: "RequestHub Partner API",
+      version: "1.0.0",
+      description:
+        "Read and write the feedback ideas on your RequestHub board from your own backend. Every request is scoped to the board your API key belongs to; there is no way to name another board. Create a key on your board's Settings page.",
+    },
+    servers: [{ url: origin }],
+    security: [{ bearerAuth: [] }],
+    components: {
+      securitySchemes: { bearerAuth: { type: "http", scheme: "bearer", description: "Your board's API key, rhk_ followed by 64 hex characters." } },
+      schemas: { Idea: idea, Error: err },
+    },
+    paths: {
+      "/api/v1/ideas": {
+        get: {
+          operationId: "listIdeas",
+          summary: "List ideas",
+          description: "Every idea on your board, newest first, with vote counts and status.",
+          responses: { 200: { description: "Ideas", content: { "application/json": { schema: { type: "object", properties: { ok: { type: "boolean" }, ideas: { type: "array", items: { $ref: "#/components/schemas/Idea" } } } } } } }, ...errors },
+        },
+        post: {
+          operationId: "createIdea",
+          summary: "Create an idea",
+          description: "Files an idea on your board, exactly as if a user submitted it. Send an Idempotency-Key to make retries safe: the same key returns the same idea instead of filing a second one.",
+          parameters: [{ name: "Idempotency-Key", in: "header", required: false, schema: { type: "string", pattern: "^[A-Za-z0-9_-]{8,100}$" } }],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { type: "object", required: ["title"], properties: { title: { type: "string" }, description: { type: "string" }, category: { type: "string", default: "Feature" }, submitterEmail: { type: "string", format: "email" }, tags: { type: "array", items: { type: "string" } } } } } },
+          },
+          responses: { 200: { description: "Created (or the original, for a repeated Idempotency-Key)", content: { "application/json": { schema: { type: "object", properties: { ok: { type: "boolean" }, idea: { $ref: "#/components/schemas/Idea" } } } } } }, 400: { description: "title is required", content: { "application/json": { schema: err } } }, ...errors },
+        },
+      },
+      "/api/v1/ideas/{id}": {
+        get: {
+          operationId: "getIdea",
+          summary: "Get an idea",
+          parameters: [idParam],
+          responses: { 200: { description: "The idea", content: { "application/json": { schema: { type: "object", properties: { ok: { type: "boolean" }, idea: { $ref: "#/components/schemas/Idea" } } } } } }, 404: { description: "Not on your board", content: { "application/json": { schema: err } } }, 410: { description: "Merged into another idea (mergedInto names it)", content: { "application/json": { schema: err } } }, ...errors },
+        },
+        delete: {
+          operationId: "deleteIdea",
+          summary: "Delete an idea",
+          parameters: [idParam],
+          responses: { 200: { description: "Deleted", content: { "application/json": { schema: { type: "object", properties: { ok: { type: "boolean" } } } } } }, 404: { description: "Not on your board", content: { "application/json": { schema: err } } }, ...errors },
+        },
+      },
+      "/api/v1/ideas/{id}/status": {
+        post: {
+          operationId: "updateIdeaStatus",
+          summary: "Change an idea's status",
+          description: "Moves an idea along your roadmap. The same side effects run as when you change it on the board: Linear, Notion, Slack and subscriber updates.",
+          parameters: [idParam],
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["status"], properties: { status: { type: "string", enum: STATUSES } } } } } },
+          responses: { 200: { description: "Updated", content: { "application/json": { schema: { type: "object", properties: { ok: { type: "boolean" }, idea: { $ref: "#/components/schemas/Idea" } } } } } }, 400: { description: "Unknown status", content: { "application/json": { schema: err } } }, 404: { description: "Not on your board", content: { "application/json": { schema: err } } }, ...errors },
+        },
+      },
+    },
+    "x-webhooks": {
+      description:
+        "Add an HTTPS endpoint on your board's Settings page to receive events. Body: { event, customerSlug, data, sentAt }. Headers: x-requesthub-event names the event; x-requesthub-signature is the hex HMAC-SHA256 of the raw body with your endpoint's secret.",
+      events: {
+        "idea.created": "A new idea was filed (widget, board, Slack, or API).",
+        "idea.status_changed": "An idea moved to another status.",
+        "idea.merged": "An idea was merged into another.",
+        "comment.created": "A public comment was posted on an idea.",
+      },
+    },
+  };
+}
+
+function developersPage(origin) {
+  const spec = partnerOpenApi(origin);
+  const rows = Object.entries(spec.paths)
+    .flatMap(([path, ops]) => Object.entries(ops).map(([method, op]) => `<tr><td><code>${method.toUpperCase()}</code></td><td><code>${escapeHtml(path)}</code></td><td>${escapeHtml(op.summary)}${op.description ? `<div class="desc">${escapeHtml(op.description)}</div>` : ""}</td></tr>`))
+    .join("");
+  const events = Object.entries(spec["x-webhooks"].events)
+    .map(([name, desc]) => `<tr><td><code>${escapeHtml(name)}</code></td><td>${escapeHtml(desc)}</td></tr>`)
+    .join("");
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Developers - RequestHub</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23625afa'/%3E%3Cpath d='M9 22V10h7.2c2.9 0 4.8 1.7 4.8 4.3 0 1.9-1 3.3-2.7 3.9L22 22h-3.3l-3.2-3.4H12V22H9zm3-5.8h4c1.4 0 2.2-.7 2.2-1.9 0-1.2-.8-1.8-2.2-1.8h-4v3.7z' fill='white'/%3E%3C/svg%3E" />
+  <meta name="description" content="RequestHub Partner API: list, create, update and delete feedback ideas from your own backend, plus signed webhooks." />
+  ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
+  <style>
+    ${DESIGN_TOKENS}
+    .wrap { max-width: 860px; margin: 0 auto; padding: 48px 16px 72px; box-sizing: border-box; }
+    a { color: var(--accent); }
+    h1 { font-size: 28px; margin: 0 0 8px; color: var(--text); }
+    h2 { font-size: 18px; margin: 36px 0 10px; color: var(--text); }
+    p, li { color: var(--text-muted); font-size: 14px; line-height: 1.6; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; color: var(--text); overflow-wrap: anywhere; }
+    pre { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; overflow-x: auto; font-size: 12.5px; color: var(--text); }
+    pre code { background: none; border: none; padding: 0; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--card); }
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    th, td { text-align: left; padding: 10px 14px; border-top: 1px solid var(--border); vertical-align: top; color: var(--text); }
+    tr:first-child th { border-top: none; }
+    th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); font-weight: 600; }
+    .desc { color: var(--text-muted); font-size: 12.5px; margin-top: 4px; }
+    .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; }
+    .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); font-weight: 700; }
+    .logo-mark { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <a class="logo" href="/"><span class="logo-mark">R</span>RequestHub</a>
+      <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
+    </div>
+    <h1>RequestHub Partner API</h1>
+    <p>Read and write the ideas on your feedback board from your own backend. Every request is scoped to the board your API key belongs to. Machine-readable spec: <a href="/api/v1/openapi.json"><code>/api/v1/openapi.json</code></a> (OpenAPI 3).</p>
+
+    <h2>Authentication</h2>
+    <p>Create a key on your board's <b>Settings</b> page and send it as a bearer token. Keep it on your server.</p>
+    <pre><code>curl ${escapeHtml(origin)}/api/v1/ideas \\
+  -H "Authorization: Bearer rhk_..."</code></pre>
+
+    <h2>Endpoints</h2>
+    <div class="table-wrap"><table><tr><th>Method</th><th>Path</th><th>What it does</th></tr>${rows}</table></div>
+
+    <h2>Safe retries</h2>
+    <p>Send an <code>Idempotency-Key</code> header on <code>POST /api/v1/ideas</code>. Repeating a request with the same key returns the idea from the first call instead of filing a second one.</p>
+    <pre><code>curl -X POST ${escapeHtml(origin)}/api/v1/ideas \\
+  -H "Authorization: Bearer rhk_..." \\
+  -H "Idempotency-Key: order-4821-feedback" \\
+  -H "Content-Type: application/json" \\
+  -d '{"title":"Export dashboards to PDF","category":"Feature"}'</code></pre>
+
+    <h2>Webhooks</h2>
+    <p>${escapeHtml(spec["x-webhooks"].description)}</p>
+    <div class="table-wrap"><table><tr><th>Event</th><th>When</th></tr>${events}</table></div>
+
+    <h2>Statuses</h2>
+    <p>${STATUSES.map((st) => `<code>${st}</code>`).join(" ")}</p>
+  </div>
+</body>
+</html>`;
+}
+
 async function callWorkflow(env, workflowId, input, endOrgId) {
   return (await runWorkflow(env, workflowId, input, endOrgId)).data;
 }
@@ -901,6 +1074,7 @@ function homePage() {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>RequestHub - feedback boards for SaaS teams</title>
+  <link rel="service-desc" type="application/openapi+json" href="/api/v1/openapi.json" />
   ${DESIGN_FONT_LINK}
   <script>${THEME_TOGGLE_SCRIPT}</script>
   <style>
@@ -1030,7 +1204,7 @@ function homePage() {
     <a class="btn-primary" href="/signup">Start your board &rarr;</a>
   </div>
 
-  <div class="footer">Powered by RequestHub, built on Fastn</div>
+  <div class="footer">Powered by RequestHub, built on Fastn &middot; <a href="/developers" style="color:inherit">Developers: REST API &amp; webhooks</a></div>
 </body>
 </html>`;
 }
@@ -1756,7 +1930,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
       <h2>API access</h2>
       <p class="hint">Call RequestHub from your own backend instead of (or alongside) the embed widget - list ideas, create one, or update a status. One active key per board; generating a new one revokes the old.</p>
       <div id="apiKeyStatus"><p class="hint">Loading...</p></div>
-      <p class="hint" style="margin-top: 10px;"><code style="background:none;border:none;padding:0;display:inline;">GET/POST ${escapeHtml(baseUrl)}/api/v1/ideas</code>, <code style="background:none;border:none;padding:0;display:inline;">GET/DELETE ${escapeHtml(baseUrl)}/api/v1/ideas/:id</code>, <code style="background:none;border:none;padding:0;display:inline;">POST ${escapeHtml(baseUrl)}/api/v1/ideas/:id/status</code> - send your key as <code style="background:none;border:none;padding:0;display:inline;">Authorization: Bearer rhk_...</code>.</p>
+      <p class="hint" style="margin-top: 10px;"><code style="background:none;border:none;padding:0;display:inline;">GET/POST ${escapeHtml(baseUrl)}/api/v1/ideas</code>, <code style="background:none;border:none;padding:0;display:inline;">GET/DELETE ${escapeHtml(baseUrl)}/api/v1/ideas/:id</code>, <code style="background:none;border:none;padding:0;display:inline;">POST ${escapeHtml(baseUrl)}/api/v1/ideas/:id/status</code> - send your key as <code style="background:none;border:none;padding:0;display:inline;">Authorization: Bearer rhk_...</code>. Full reference, retries and webhooks: <a href="/developers" target="_blank" rel="noopener">API docs</a>.</p>
     </div>
 
     <div class="card">
@@ -2330,8 +2504,8 @@ function boardPage(customerSlug, isOwner) {
     .comment-match-badge { font-size: 10.5px; font-weight: 600; color: var(--text-faint); background: var(--surface-2); padding: 2px 7px; border-radius: var(--radius-pill); vertical-align: 1px; }
     .idea-row { display: flex; gap: 14px; align-items: flex-start; }
     .idea-body { flex: 1; min-width: 0; }
-    .idea-title { font-weight: 600; font-size: 14px; color: var(--text); }
-    .idea-desc { color: var(--text-muted); font-size: 13px; margin-top: 3px; line-height: 1.45; }
+    .idea-title { font-weight: 600; font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
+    .idea-desc { color: var(--text-muted); font-size: 13px; margin-top: 3px; line-height: 1.45; overflow-wrap: anywhere; }
     .meta { margin-top: 10px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 
     .chip {
@@ -3121,8 +3295,8 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin, metaTitle, metaD
     .vote-box.voted { border-color: var(--accent); background: var(--accent-tint); color: var(--accent); }
     .vote-box .icon { width: 16px; height: 16px; }
     .vote-box .vote-num { font-size: 16px; font-weight: 700; color: var(--text); margin-top: 2px; }
-    .idea-title { font-size: 20px; font-weight: 700; margin: 0 0 8px; }
-    .idea-desc { color: var(--text-muted); font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+    .idea-title { font-size: 20px; font-weight: 700; margin: 0 0 8px; overflow-wrap: anywhere; }
+    .idea-desc { color: var(--text-muted); font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
     .idea-meta { margin-top: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: var(--radius-pill); font-weight: 600; font-size: 11px; }
     .chip.status-chip.under_review { background-color: var(--surface-3); color: var(--text-muted); }
@@ -3614,8 +3788,8 @@ function roadmapPage(customerSlug, isOwner) {
 
     .card { background: var(--card); border: 1px solid var(--border); border-left-width: 3px; border-radius: 12px; padding: 13px 14px 13px 12px; margin-bottom: 8px; display: flex; gap: 10px; align-items: flex-start; }
     .card-body { flex: 1; min-width: 0; }
-    .card-title { font-weight: 600; font-size: 13.5px; color: var(--text); }
-    .card-desc { color: var(--text-muted); font-size: 12px; margin-top: 4px; line-height: 1.4; }
+    .card-title { font-weight: 600; font-size: 13.5px; color: var(--text); overflow-wrap: anywhere; }
+    .card-desc { color: var(--text-muted); font-size: 12px; margin-top: 4px; line-height: 1.4; overflow-wrap: anywhere; }
     .card-meta { margin-top: 10px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-pill); font-weight: 600; font-size: 10.5px; }
     .vote-box {
@@ -3926,8 +4100,8 @@ function adminPage(customerSlug, isOwner) {
     }
     .card-pin-btn:hover { background: var(--accent-tint); color: var(--accent); opacity: 1; }
     .card-pin-btn.active { color: var(--accent); opacity: 1; }
-    .card-title { font-weight: 600; font-size: 13px; color: var(--text); }
-    .card-desc { color: var(--text-muted); font-size: 11.5px; margin-top: 4px; line-height: 1.4; }
+    .card-title { font-weight: 600; font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+    .card-desc { color: var(--text-muted); font-size: 11.5px; margin-top: 4px; line-height: 1.4; overflow-wrap: anywhere; }
     .card-meta { margin-top: 9px; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 
     .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-weight: 600; font-size: 10.5px; }
@@ -5568,6 +5742,11 @@ const app = {
       }
     }
 
+    if (request.method === "GET" && url.pathname === "/favicon.ico") {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#625afa"/><path d="M9 22V10h7.2c2.9 0 4.8 1.7 4.8 4.3 0 1.9-1 3.3-2.7 3.9L22 22h-3.3l-3.2-3.4H12V22H9zm3-5.8h4c1.4 0 2.2-.7 2.2-1.9 0-1.2-.8-1.8-2.2-1.8h-4v3.7z" fill="white"/></svg>`;
+      return new Response(svg, { headers: { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" } });
+    }
+
     if (request.method === "GET" && url.pathname === "/embed.js") {
       return new Response(embedJs(), {
         headers: { "content-type": "application/javascript; charset=utf-8", "cache-control": "public, max-age=300" },
@@ -6907,6 +7086,13 @@ const app = {
     // integrate without a human logging in. The tenant is derived entirely
     // from the key; a caller can never act on a customerSlug other than its
     // own, unlike the session-cookie routes above which take it as a param.
+    if (request.method === "GET" && url.pathname === "/api/v1/openapi.json") {
+      return json(partnerOpenApi(url.origin), 200, { "access-control-allow-origin": "*", "cache-control": "public, max-age=300" });
+    }
+    if (request.method === "GET" && url.pathname === "/developers") {
+      return html(developersPage(url.origin));
+    }
+
     if (url.pathname.startsWith("/api/v1/")) {
       const apiCustomerSlug = await requireApiKey(request, env);
       if (apiCustomerSlug) tenantOfWrite.set(request, apiCustomerSlug);
