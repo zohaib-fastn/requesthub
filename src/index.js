@@ -1291,17 +1291,31 @@ async function provisionFastnTenant(env, slug, name) {
 // installation, so the hub would not offer it. Creating one that exists is a 409.
 async function ensureConnectInstallations(env, endOrgId, slug) {
   const listed = await fastnApi(env, "GET", `/api/v1/installations?end_org_id=${encodeURIComponent(endOrgId)}&target_type=widget&limit=100`);
-  if (listed.status >= 300) return;
+  if (listed.status >= 300) throw new Error(`listing installations failed (HTTP ${listed.status})`);
   const have = new Set(
     (Array.isArray(listed.data) ? listed.data : [])
       .filter((i) => i.endOrgId === endOrgId && i.status !== "archived")
       .map((i) => i.targetId || i.widgetId)
   );
-  await Promise.all(
+  const created = await Promise.allSettled(
     CONNECT_WIDGETS.filter((w) => !have.has(w.widgetId)).map((w) =>
-      createInstallationForTenant(env, w.widgetId, endOrgId, `${slug} - Connect ${w.name}`).catch(() => null)
+      createInstallationForTenant(env, w.widgetId, endOrgId, `${slug} - Connect ${w.name}`)
     )
   );
+  const failed = created.filter((r) => r.status === "rejected");
+  if (failed.length) throw new Error(failed.map((r) => r.reason?.message).join("; "));
+}
+
+// Idempotent setup that only matters once in a while - a tool added since a
+// board was provisioned, the tier catalogue after a deploy - is remembered at
+// the edge, so the page that needs it does not pay for it on every visit.
+// A failure is not remembered, so the next visit tries again.
+async function onceEvery(origin, name, seconds, fn) {
+  const key = `${origin}/__rh/once/${name}`;
+  if (await caches.default.match(key)) return "remembered";
+  const result = await fn();
+  await caches.default.put(key, new Response("1", { headers: { "cache-control": `public, max-age=${seconds}` } }));
+  return result;
 }
 
 // A customer who connects GitHub twice has two connections, and Fastn will not
@@ -2220,6 +2234,21 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
         : `<p class="hint">Connect a Linear team above and save, then come back here to turn on real-time sync.</p>`}
     </div>
 
+    <script>
+      // Cards below the fold load when they are about to scroll into view, so
+      // opening Settings does not fan out a dozen backend calls at once.
+      window.whenVisible = function (el, fn) {
+        if (!el || !('IntersectionObserver' in window)) return fn();
+        var io = new IntersectionObserver(function (entries) {
+          if (entries.some(function (e) { return e.isIntersecting; })) {
+            io.disconnect();
+            fn();
+          }
+        }, { rootMargin: '400px 0px' });
+        io.observe(el);
+      };
+    </script>
+
     <div class="card" id="claudeCard" data-testid="claude-card">
       <h2>Use RequestHub from Claude</h2>
       <p class="hint">Ask Claude about your board and act on it in plain English: "what are our most-voted open ideas?", "mark #42 as planned", "post the top three to Slack". Claude connects through Fastn as <b>${escapeHtml(customerSlug)}</b>, with this board's own tools, and nothing else.</p>
@@ -2394,7 +2423,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
             .catch(function (e) { say('Could not check: ' + e.message, 'bad'); })
             .then(function () { syncBtn.disabled = false; });
         });
-        load();
+        whenVisible(document.getElementById('githubCard'), load);
       })();
     </script>
 
@@ -2465,7 +2494,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
             .catch(function () { btn.textContent = label; btn.disabled = false; });
         });
         document.getElementById('deliveriesRefresh').addEventListener('click', load);
-        load();
+        whenVisible(document.getElementById('deliveriesCard'), load);
       })();
     </script>
 
@@ -2625,8 +2654,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
         .then(function (d) {
           var options = (d && d.ok && d.options) || [];
           if (!options.length) {
-            picker.innerHTML = '<option>No options found</option>';
-            picker.disabled = true;
+            picker.hidden = true;
             note.textContent = d && d.ok
               ? 'Nothing found yet - type the value manually below.'
               : 'Connect this tool first on the Connect your tools page, or type the value manually below.';
@@ -2645,9 +2673,8 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
           });
         })
         .catch(function () {
-          picker.innerHTML = '<option>Could not load options</option>';
-          picker.disabled = true;
-          note.textContent = 'Type the value manually below.';
+          picker.hidden = true;
+          note.textContent = 'Could not load your options right now - type the value manually below.';
         });
     }
 
@@ -2719,7 +2746,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
           });
         });
     }
-    loadTeam();
+    whenVisible(document.getElementById('teamList'), loadTeam);
 
     document.getElementById('inviteBtn').addEventListener('click', function () {
       var input = document.getElementById('inviteEmail');
@@ -2825,7 +2852,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
           });
         });
     }
-    loadWebhooks();
+    whenVisible(document.getElementById('webhookList'), loadWebhooks);
 
     function loadApiKeyStatus() {
       var container = document.getElementById('apiKeyStatus');
@@ -2880,7 +2907,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
         });
       }
     }
-    loadApiKeyStatus();
+    whenVisible(document.getElementById('apiKeyStatus'), loadApiKeyStatus);
 
     document.getElementById('addWebhookBtn').addEventListener('click', function () {
       var input = document.getElementById('webhookUrl');
@@ -3827,7 +3854,7 @@ function boardPage(customerSlug, isOwner) {
 </html>`;
 }
 
-function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin, metaTitle, metaDescription) {
+function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin, metaTitle, metaDescription, initial = null) {
   const pageTitle = metaTitle ? `${metaTitle} - ${customerSlug}` : `Idea - ${customerSlug}`;
   const pageDescription = metaDescription
     ? metaDescription.length > 200 ? metaDescription.slice(0, 197) + "..." : metaDescription
@@ -3937,6 +3964,9 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin, metaTitle, metaD
     var ideaId = ${JSON.stringify(String(ideaId))};
     var isAdmin = ${isAdmin ? "true" : "false"};
     var statusLabels = { under_review: "Under Review", planned: "Planned", in_progress: "In Progress", shipped: "Shipped", declined: "Declined" };
+    // The idea and labels as the server read them, so the page renders without
+    // a second round trip; null when the server could not find the idea.
+    var initialData = ${JSON.stringify(initial).replace(/</g, "\\u003c")};
 
     var CATEGORY_PALETTE = [
       { bg: 'var(--accent-tint)', fg: 'var(--accent)' },
@@ -4196,7 +4226,12 @@ function ideaDetailPage(customerSlug, ideaId, isOwner, isAdmin, metaTitle, metaD
         });
     }
 
-    load();
+    if (initialData && initialData.idea) {
+      if (initialData.statusLabels) statusLabels = initialData.statusLabels;
+      renderIdea(initialData.idea);
+    } else {
+      load();
+    }
   </script>
 </body>
 </html>`;
@@ -6565,25 +6600,29 @@ const app = {
 
     const ideaDetailMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/ideas\/(\d+)\/?$/);
     if (request.method === "GET" && ideaDetailMatch) {
-      const isOwner = await requireAuth(request, env, OWNER_SLUG);
-      const isAdmin = await requireAuth(request, env, ideaDetailMatch[1]);
+      const [isOwner, isAdmin] = await Promise.all([requireAuth(request, env, OWNER_SLUG), requireAuth(request, env, ideaDetailMatch[1])]);
       // Server-fetched once, just for <title>/meta tags - the page's own
       // client-side JS still does its normal fetch to actually render the
       // idea. Without this, every single idea on every board shared a
       // generic "Idea - demo - RequestHub" title no matter which idea you
       // linked to, so a shared permalink was indistinguishable from any
       // other idea's link in a browser tab, bookmark, or chat unfurl.
+      // Read through the board's edge cache, the same copy the board itself
+      // shows, and handed to the page so it renders without fetching it again.
       let metaTitle = null;
       let metaDescription = null;
+      let initial = null;
       try {
-        const listData = await callWorkflow(env, LIST_WORKFLOW_ID, { customerSlug: ideaDetailMatch[1] });
+        const listKey = `${url.origin}/api/ideas?customer=${encodeURIComponent(ideaDetailMatch[1])}`;
+        const listData = await (await cachedBoardRead(listKey, request, env, ctx)).json();
         const found = (listData?.ideas || []).find((i) => i.id === Number(ideaDetailMatch[2]));
         if (found) {
           metaTitle = found.title;
           metaDescription = found.description || null;
+          initial = { idea: found, statusLabels: listData.statusLabels || null };
         }
       } catch {}
-      return html(ideaDetailPage(ideaDetailMatch[1], ideaDetailMatch[2], isOwner, isAdmin, metaTitle, metaDescription));
+      return html(ideaDetailPage(ideaDetailMatch[1], ideaDetailMatch[2], isOwner, isAdmin, metaTitle, metaDescription, initial));
     }
 
     const loginMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/login\/?$/);
@@ -6927,8 +6966,10 @@ const app = {
         }
       }
       // Tier limits gate which tools the hub can add, so the catalogue goes first.
-      await ensureTierCatalogue(env).catch(() => {});
-      await ensureConnectInstallations(env, endOrgId, customerSlug).catch(() => {});
+      await onceEvery(url.origin, "tier-catalogue", 3600, () => ensureTierCatalogue(env)).catch(() => {});
+      await onceEvery(url.origin, `connect-installations/${customerSlug}`, 6 * 3600, () =>
+        ensureConnectInstallations(env, endOrgId, customerSlug)
+      ).catch(() => {});
       return html(connectPage(customerSlug, endOrgId, isOwner));
     }
 
