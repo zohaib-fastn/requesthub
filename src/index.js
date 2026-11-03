@@ -1375,7 +1375,7 @@ function signupDonePage(customerSlug, baseUrl) {
 </html>`;
 }
 
-function connectPage(customerSlug, endOrgId, token, setupLinks, isOwner) {
+function connectPage(customerSlug, endOrgId, setupLinks, isOwner) {
   const cards = CONNECT_WIDGETS.map(function (w) {
     const link = setupLinks[w.slug];
     const initial = w.name.charAt(0);
@@ -1439,7 +1439,10 @@ function connectPage(customerSlug, endOrgId, token, setupLinks, isOwner) {
       color: var(--text-faint); margin: 28px 0 10px;
     }
     .frame-wrap { border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden; min-height: 500px; background: var(--card); }
-    .frame-wrap iframe { display: block; width: 100%; height: 500px; border: none; }
+    .frame-wrap iframe { display: block; width: 100%; border: none; }
+    .hub-status { font-size: 13px; color: var(--text-muted); margin: 10px 0 0; }
+    .hub-status.good { color: var(--good); }
+    .hub-status.bad { color: var(--bad); }
   </style>
 </head>
 <body>
@@ -1464,32 +1467,81 @@ function connectPage(customerSlug, endOrgId, token, setupLinks, isOwner) {
     ${cards}
 
     <div class="section-label">Connection status</div>
-    <div class="frame-wrap">
-      <iframe id="connectFrame" src="${FASTN_BASE}/api/v1/embed/iframe?token=${encodeURIComponent(token)}&org-id=${encodeURIComponent(endOrgId)}&theme=light" allow="clipboard-write"></iframe>
-    </div>
+    <div class="frame-wrap" id="connectHub" data-testid="connect-hub"></div>
+    <p class="hub-status" id="hubStatus" role="status" hidden></p>
   </div>
+  <script src="${FASTN_BASE}/v1/embed/assets/fastn-embed.min.js"></script>
   <script>
-    document.addEventListener('DOMContentLoaded', function () {
-      // THEME_TOGGLE_SCRIPT (in <head>) already applied the right data-theme
-      // attribute by this point - this iframe is a separate origin and can't
-      // read our CSS variables, so it needs its own theme param kept in sync,
-      // both on load and whenever the toggle flips.
-      var iframe = document.getElementById('connectFrame');
+    (function () {
+      var slug = ${JSON.stringify(customerSlug).replace(/</g, "\\u003c")};
+      var orgId = ${JSON.stringify(endOrgId).replace(/</g, "\\u003c")};
+      var statusEl = document.getElementById('hubStatus');
+      function status(text, tone) {
+        statusEl.textContent = text;
+        statusEl.className = 'hub-status' + (tone ? ' ' + tone : '');
+        statusEl.hidden = !text;
+      }
+      // The hub is another origin and cannot read our CSS, so it gets the
+      // board's own palette as theme tokens, re-sent when dark mode flips.
+      function cssVar(name) {
+        return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      }
+      function theme() {
+        var t = {
+          primary: cssVar('--accent'), primaryForeground: '#ffffff',
+          background: cssVar('--card'), foreground: cssVar('--text'),
+          card: cssVar('--surface-2'), muted: cssVar('--surface-2'),
+          mutedForeground: cssVar('--text-muted'), border: cssVar('--border'),
+        };
+        Object.keys(t).forEach(function (k) { if (!t[k]) delete t[k]; });
+        return t;
+      }
+      function getToken() {
+        return fetch('/api/customers/' + encodeURIComponent(slug) + '/fastn-token', { method: 'POST' })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (!d || !d.ok || !d.token) throw new Error((d && d.error) || 'no token');
+            return { token: d.token, baseUrl: d.baseUrl };
+          });
+      }
+      // A connect or disconnect re-syncs whatever RequestHub keys off it (the
+      // Slack idea capture) right away instead of on the next sweep.
+      function changed(e) {
+        fetch('/api/customers/' + encodeURIComponent(slug) + '/integrations/changed', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ connectorId: (e && e.connectorId) || '', connectorName: (e && e.connectorName) || '' }),
+        }).catch(function () {});
+      }
+      if (!window.FastnEmbed || !window.FastnEmbed.createFastnEmbed) {
+        status("Couldn't load the connections panel - refresh the page to try again.", 'bad');
+        return;
+      }
+      var hub = window.FastnEmbed.createFastnEmbed({
+        baseUrl: ${JSON.stringify(FASTN_BASE)},
+        orgId: orgId,
+        getToken: getToken,
+        height: 520,
+        theme: theme(),
+      });
+      hub.on('connected', function (e) {
+        status((e && e.connectorName ? e.connectorName : 'App') + ' connected.', 'good');
+        changed(e);
+      });
+      hub.on('disconnected', function (e) {
+        status('Disconnected.', '');
+        changed(e);
+      });
+      hub.on('error', function (e) {
+        status("Couldn't load the connections panel: " + ((e && e.message) || 'unknown error') + '. Refresh to try again.', 'bad');
+      });
+      hub.on('session-expired', function () {
+        status('Your session expired - refresh the page to continue.', 'bad');
+      });
+      hub.mount('#connectHub');
       var toggle = document.getElementById('themeToggle');
-      function isDarkNow() {
-        var attr = document.documentElement.getAttribute('data-theme');
-        return attr === 'dark' || (!attr && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      }
-      function syncFrameTheme() {
-        try {
-          var u = new URL(iframe.src);
-          u.searchParams.set('theme', isDarkNow() ? 'dark' : 'light');
-          if (iframe.src !== u.toString()) iframe.src = u.toString();
-        } catch {}
-      }
-      syncFrameTheme();
-      if (toggle) toggle.addEventListener('click', function () { setTimeout(syncFrameTheme, 0); });
-    });
+      if (toggle) toggle.addEventListener('click', function () { setTimeout(function () { hub.setTheme(theme()); }, 0); });
+    })();
   </script>
 </body>
 </html>`;
@@ -5969,7 +6021,6 @@ const app = {
         }
       }
       try {
-        const token = await mintEmbedToken(env, endOrgId, customerSlug);
         const linkResults = await Promise.allSettled(
           CONNECT_WIDGETS.map(function (w) {
             return createSetupLink(env, w.widgetId, endOrgId, `${customerSlug} - Connect ${w.name}`);
@@ -5980,10 +6031,39 @@ const app = {
           const r = linkResults[i];
           setupLinks[w.slug] = r.status === "fulfilled" ? r.value : null;
         });
-        return html(connectPage(customerSlug, endOrgId, token, setupLinks, isOwner));
+        return html(connectPage(customerSlug, endOrgId, setupLinks, isOwner));
       } catch (err) {
         return html(connectUnavailablePage(customerSlug, isOwner));
       }
+    }
+
+    const fastnTokenMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/fastn-token$/);
+    if (request.method === "POST" && fastnTokenMatch) {
+      const customerSlug = fastnTokenMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      const endOrgId = await getTenantOrgId(env, customerSlug);
+      if (!endOrgId) return json({ ok: false, error: "no connected workspace for this customer yet" }, 404);
+      try {
+        const token = await mintEmbedToken(env, endOrgId, customerSlug);
+        if (!token) throw new Error("Fastn returned no token");
+        return json({ ok: true, token, baseUrl: FASTN_BASE }, 200, { "cache-control": "no-store" });
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
+    const integrationsChangedMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/integrations\/changed$/);
+    if (request.method === "POST" && integrationsChangedMatch) {
+      const customerSlug = integrationsChangedMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      const body = await request.json().catch(() => ({}));
+      const isSlack = body.connectorId === SLACK_CONNECTOR_ID || /slack/i.test(String(body.connectorName || "")) || !body.connectorId;
+      if (isSlack) ctx.waitUntil(syncSlackCaptureTriggers(env, { slug: customerSlug }).catch(() => {}));
+      return json({ ok: true, resynced: isSlack ? ["slack-capture"] : [] });
     }
 
     const settingsMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/settings\/?$/);
