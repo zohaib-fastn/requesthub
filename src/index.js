@@ -192,9 +192,9 @@ const TENANT_ORG_IDS = {
 // window.opener (see B05) - the setup link is a plain top-level page with no
 // popup/opener handshake to break.
 const CONNECT_WIDGETS = [
-  { slug: "slack", name: "Slack", widgetId: "wgt_de3a3eecea2f", color: "#4A154B" },
-  { slug: "linear", name: "Linear", widgetId: "wgt_6d4c5ff802f4", color: "#5E6AD2" },
-  { slug: "notion", name: "Notion", widgetId: "wgt_c14882ee7ab3", color: "#000000" },
+  { slug: "slack", name: "Slack", widgetId: "wgt_de3a3eecea2f" },
+  { slug: "linear", name: "Linear", widgetId: "wgt_6d4c5ff802f4" },
+  { slug: "notion", name: "Notion", widgetId: "wgt_c14882ee7ab3" },
 ];
 
 function html(body) {
@@ -1782,23 +1782,13 @@ function signupDonePage(customerSlug, baseUrl) {
 </html>`;
 }
 
-function connectPage(customerSlug, endOrgId, setupLinks, isOwner) {
-  const cards = CONNECT_WIDGETS.map(function (w) {
-    const link = setupLinks[w.slug];
-    const initial = w.name.charAt(0);
-    return `<div class="tool-card">
-      <div class="tool-icon" style="background:${w.color}">${initial}</div>
-      <div class="tool-info">
-        <div class="tool-name">${w.name}</div>
-        <div class="tool-sub">Connect your own ${w.name} workspace</div>
-      </div>
-      ${
-        link
-          ? `<a class="btn-connect" href="${link}" target="_blank" rel="noopener">Connect &#8599;</a>`
-          : `<span class="btn-connect disabled">Unavailable</span>`
-      }
-    </div>`;
-  }).join("");
+function connectPage(customerSlug, endOrgId, isOwner) {
+  // Fallback for a provider whose OAuth page cuts the hub's way back (Slack
+  // did, 31 Oct): a setup link in its own tab, minted only when clicked.
+  const fallbackLinks = CONNECT_WIDGETS.map(function (w) {
+    return `<a href="/b/${encodeURIComponent(customerSlug)}/connect/${w.slug}" target="_blank" rel="noopener" data-testid="connect-fallback-${w.slug}">${w.name}</a>`;
+  });
+  const fallbackList = fallbackLinks.slice(0, -1).join(", ") + " or " + fallbackLinks[fallbackLinks.length - 1];
 
   return `<!doctype html>
 <html>
@@ -1823,33 +1813,14 @@ function connectPage(customerSlug, endOrgId, setupLinks, isOwner) {
     .hero h1 { font-size: 19px; margin: 0 0 4px; }
     .hero p { margin: 0; color: var(--text-muted); font-size: 13.5px; }
 
-    .tool-card {
-      display: flex; align-items: center; gap: 14px; background: var(--card); border: 1px solid var(--border);
-      border-radius: var(--radius-card); padding: 14px 16px; margin-bottom: 10px;
-    }
-    .tool-icon {
-      width: 36px; height: 36px; border-radius: 9px; color: #fff; font-weight: 700; font-size: 15px;
-      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-    }
-    .tool-info { flex: 1; min-width: 0; }
-    .tool-name { font-weight: 600; font-size: 14px; color: var(--text); }
-    .tool-sub { color: var(--text-muted); font-size: 12.5px; margin-top: 2px; }
-    .btn-connect {
-      flex-shrink: 0; background: var(--accent); color: #fff; text-decoration: none; font-size: 13px;
-      font-weight: 600; padding: 8px 14px; border-radius: var(--radius-btn);
-    }
-    .btn-connect:hover { background: var(--accent-hover); }
-    .btn-connect.disabled { background: var(--surface-3); color: var(--text-faint); cursor: default; }
-
-    .section-label {
-      font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
-      color: var(--text-faint); margin: 28px 0 10px;
-    }
     .frame-wrap { border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden; min-height: 500px; background: var(--card); }
     .frame-wrap iframe { display: block; width: 100%; border: none; }
     .hub-status { font-size: 13px; color: var(--text-muted); margin: 10px 0 0; }
     .hub-status.good { color: var(--good); }
     .hub-status.bad { color: var(--bad); }
+    .hub-fallback { font-size: 12.5px; color: var(--text-faint); margin: 12px 0 0; }
+    .hub-fallback a { color: var(--accent); text-decoration: none; }
+    .hub-fallback a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -1871,11 +1842,9 @@ function connectPage(customerSlug, endOrgId, setupLinks, isOwner) {
       <p>Connect your own Slack, Linear, and Notion so submissions, status updates, and your changelog flow into your own workspace - without leaving RequestHub.</p>
     </div>
 
-    ${cards}
-
-    <div class="section-label">Connection status</div>
     <div class="frame-wrap" id="connectHub" data-testid="connect-hub"></div>
     <p class="hub-status" id="hubStatus" role="status" hidden></p>
+    <p class="hub-fallback" data-testid="connect-fallback">Trouble connecting here? Connect ${fallbackList} in a new tab instead.</p>
   </div>
   <script src="${FASTN_BASE}/v1/embed/assets/fastn-embed.min.js"></script>
   <script>
@@ -2681,7 +2650,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
 </html>`;
 }
 
-function connectUnavailablePage(customerSlug, isOwner) {
+function connectUnavailablePage(customerSlug, isOwner, heading = "No connected workspace yet", message = `"${escapeHtml(customerSlug)}" isn't set up as a tenant with connectable tools yet.`) {
   return `<!doctype html>
 <html>
 <head>
@@ -2701,8 +2670,8 @@ function connectUnavailablePage(customerSlug, isOwner) {
 <body>
   <div class="card">
     <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode" style="position:fixed;top:16px;right:16px;"></button>
-    <h1>No connected workspace yet</h1>
-    <p>"${escapeHtml(customerSlug)}" isn't set up as a tenant with connectable tools yet.</p>
+    <h1>${heading}</h1>
+    <p>${message}</p>
     <a href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
     ${isOwner ? `<br/><a href="/owner">&larr; Owner console</a>` : ""}
   </div>
@@ -6559,20 +6528,37 @@ const app = {
           return html(connectUnavailablePage(customerSlug, isOwner));
         }
       }
-      try {
-        const linkResults = await Promise.allSettled(
-          CONNECT_WIDGETS.map(function (w) {
-            return createSetupLink(env, w.widgetId, endOrgId, `${customerSlug} - Connect ${w.name}`);
-          })
-        );
-        const setupLinks = {};
-        CONNECT_WIDGETS.forEach(function (w, i) {
-          const r = linkResults[i];
-          setupLinks[w.slug] = r.status === "fulfilled" ? r.value : null;
+      return html(connectPage(customerSlug, endOrgId, isOwner));
+    }
+
+    const connectToolMatch = url.pathname.match(/^\/b\/([a-z0-9-]+)\/connect\/([a-z]+)$/);
+    if (request.method === "GET" && connectToolMatch) {
+      const customerSlug = connectToolMatch[1];
+      const widget = CONNECT_WIDGETS.find((w) => w.slug === connectToolMatch[2]);
+      if (!widget) return new Response("Not found", { status: 404 });
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: `/b/${encodeURIComponent(customerSlug)}/login` },
         });
-        return html(connectPage(customerSlug, endOrgId, setupLinks, isOwner));
-      } catch (err) {
-        return html(connectUnavailablePage(customerSlug, isOwner));
+      }
+      const endOrgId = await getTenantOrgId(env, customerSlug);
+      if (!endOrgId) {
+        return new Response(null, { status: 302, headers: { Location: `/b/${encodeURIComponent(customerSlug)}/connect` } });
+      }
+      try {
+        const setupUrl = await createSetupLink(env, widget.widgetId, endOrgId, `${customerSlug} - Connect ${widget.name}`);
+        if (!setupUrl) throw new Error("no setup link");
+        return new Response(null, { status: 302, headers: { Location: setupUrl, "cache-control": "no-store" } });
+      } catch {
+        return html(
+          connectUnavailablePage(
+            customerSlug,
+            await requireAuth(request, env, OWNER_SLUG),
+            `Couldn't open ${widget.name} right now`,
+            `Close this tab and try again from the Connect page in a minute.`
+          )
+        );
       }
     }
 

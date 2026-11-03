@@ -428,6 +428,14 @@ async function run() {
     const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/deliveries/replay", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: "event", id: "evt_x" }) });
     assert(r.status === 401, "status " + r.status);
   });
+  await check("a per-tool connect link redirects to login", async () => {
+    const r = await fetch(BASE_URL + "/b/" + CUSTOMER + "/connect/slack", { redirect: "manual" });
+    assert(r.status === 302 && (r.headers.get("location") || "").endsWith("/b/" + CUSTOMER + "/login"), "status " + r.status + " to " + r.headers.get("location"));
+  });
+  await check("a connect link for an unknown tool is not found", async () => {
+    const r = await fetch(BASE_URL + "/b/" + CUSTOMER + "/connect/github", { redirect: "manual" });
+    assert(r.status === 404, "status " + r.status);
+  });
   await check("Fastn embed token requires auth", async () => {
     const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/fastn-token", { method: "POST" });
     assert(r.status === 401, "status " + r.status);
