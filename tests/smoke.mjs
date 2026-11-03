@@ -433,8 +433,20 @@ async function run() {
     assert(r.status === 302 && (r.headers.get("location") || "").endsWith("/b/" + CUSTOMER + "/login"), "status " + r.status + " to " + r.headers.get("location"));
   });
   await check("a connect link for an unknown tool is not found", async () => {
-    const r = await fetch(BASE_URL + "/b/" + CUSTOMER + "/connect/github", { redirect: "manual" });
+    const r = await fetch(BASE_URL + "/b/" + CUSTOMER + "/connect/jira", { redirect: "manual" });
     assert(r.status === 404, "status " + r.status);
+  });
+  await check("GitHub releases status requires auth", async () => {
+    const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/github");
+    assert(r.status === 401, "status " + r.status);
+  });
+  await check("following GitHub repos requires auth", async () => {
+    const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/github/repos", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ repos: ["octocat/hello-world"] }) });
+    assert(r.status === 401, "status " + r.status);
+  });
+  await check("checking GitHub now requires auth", async () => {
+    const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/github/sync", { method: "POST" });
+    assert(r.status === 401, "status " + r.status);
   });
   await check("Fastn embed token requires auth", async () => {
     const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/fastn-token", { method: "POST" });

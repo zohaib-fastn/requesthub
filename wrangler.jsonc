@@ -7,6 +7,6 @@
   },
   // Reconciles each tenant's Slack capture trigger with its Slack connection.
   "triggers": {
-    "crons": ["*/15 * * * *", "7 * * * *"]
+    "crons": ["*/15 * * * *", "7 * * * *", "3,18,33,48 * * * *"]
   }
 }

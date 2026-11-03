@@ -35,6 +35,7 @@ const GET_WEBHOOK_DELIVERY_WORKFLOW_ID = "wf_42336ac2e7cd";
 const DELETE_IDEA_WORKFLOW_ID = "wf_90a8f1268843";
 const LIST_STATUS_HISTORY_WORKFLOW_ID = "wf_144ac631f830";
 const LIST_CHANGELOG_WORKFLOW_ID = "wf_69d695b3974e";
+const GITHUB_RELEASES_WORKFLOW_ID = "wf_cb5e915de8c9";
 const GET_BOARD_STATS_WORKFLOW_ID = "wf_4146c0839e38";
 const SET_IDEA_PINNED_WORKFLOW_ID = "wf_50b43c697fb7";
 const LIST_SEARCHABLE_COMMENTS_WORKFLOW_ID = "wf_8a542072003b";
@@ -195,6 +196,7 @@ const CONNECT_WIDGETS = [
   { slug: "slack", name: "Slack", widgetId: "wgt_de3a3eecea2f" },
   { slug: "linear", name: "Linear", widgetId: "wgt_6d4c5ff802f4" },
   { slug: "notion", name: "Notion", widgetId: "wgt_c14882ee7ab3" },
+  { slug: "github", name: "GitHub", widgetId: "wgt_e5dd8b92d85c" },
 ];
 
 function html(body) {
@@ -355,13 +357,17 @@ async function syncSlackCaptureForTenant(env, org, wanted, verifyWorkspace) {
 // the ceilings.
 const PARTNER_ORG_ID = "personal_zohaib-hamdani-cs-gmail";
 const TIER_SYNC_CRON = "7 * * * *";
+const GITHUB_SYNC_CRON = "3,18,33,48 * * * *";
+// Links in messages sent from a cron run, which has no request to take an origin from.
+const PUBLIC_ORIGIN = "https://requesthub.zohaib-iot.workers.dev";
 const CORE_CONNECTOR_IDS = [
   "8de5d696-5289-4c9c-ade4-de918d019d06", // Slack
   "bf147dd1-e0b5-47af-a2d5-d3187a83e0f6", // Linear
   "5e9b70b5-25cd-43ae-bcbb-a26ea01f4dbf", // Notion
+  "64cbe4f6-7e1e-4859-96e7-7699123aaedc", // GitHub (releases on the changelog)
 ];
 const CUSTOMER_TIERS = [
-  { id: "free", name: "Free", roleId: "end_user", limits: { connections: 3, integrations: 3, users: 2 }, resources: { connectors: { only: CORE_CONNECTOR_IDS } } },
+  { id: "free", name: "Free", roleId: "end_user", limits: { connections: 4, integrations: 4, users: 2 }, resources: { connectors: { only: CORE_CONNECTOR_IDS } } },
   { id: "growth", name: "Growth", roleId: "end_user", limits: { connections: 6, integrations: 6, users: 10 } },
   { id: "scale", name: "Scale", roleId: "end_user", limits: { connections: 20, integrations: 20, users: 50 } },
 ];
@@ -1279,6 +1285,79 @@ async function provisionFastnTenant(env, slug, name) {
   return org.id;
 }
 
+// Boards provisioned before a tool was added to CONNECT_WIDGETS lack its
+// installation, so the hub would not offer it. Creating one that exists is a 409.
+async function ensureConnectInstallations(env, endOrgId, slug) {
+  const listed = await fastnApi(env, "GET", `/api/v1/installations?end_org_id=${encodeURIComponent(endOrgId)}&target_type=widget&limit=100`);
+  if (listed.status >= 300) return;
+  const have = new Set(
+    (Array.isArray(listed.data) ? listed.data : [])
+      .filter((i) => i.endOrgId === endOrgId && i.status !== "archived")
+      .map((i) => i.targetId || i.widgetId)
+  );
+  await Promise.all(
+    CONNECT_WIDGETS.filter((w) => !have.has(w.widgetId)).map((w) =>
+      createInstallationForTenant(env, w.widgetId, endOrgId, `${slug} - Connect ${w.name}`).catch(() => null)
+    )
+  );
+}
+
+// Records new releases of the repos a board follows (read with the board's own
+// GitHub connection) and ships every idea linked in their notes, through the
+// same status path as triage so Slack, Linear, Notion and emails follow.
+async function syncGithubForBoard(env, ctx, customerSlug, origin, endOrgId = null) {
+  endOrgId = endOrgId || (await getTenantOrgId(env, customerSlug));
+  if (!endOrgId) return { ok: false, error: "no connected workspace for this customer yet" };
+  const data = await callWorkflow(env, GITHUB_RELEASES_WORKFLOW_ID, { op: "sync", customerSlug }, endOrgId);
+  if (!data?.ok) return { ok: false, error: data?.error || "GitHub check failed" };
+  const shipped = [];
+  if ((data.ideasToShip || []).length) {
+    let settings = {};
+    try {
+      settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug });
+    } catch {}
+    for (const ideaId of data.ideasToShip) {
+      try {
+        const r = await callWorkflow(
+          env,
+          UPDATE_STATUS_WORKFLOW_ID,
+          {
+            ideaId,
+            status: "shipped",
+            linearTeamId: settings?.linearTeamId || DEFAULT_LINEAR_TEAM_ID,
+            notionPageId: settings?.notionPageId || DEFAULT_NOTION_PAGE_ID,
+            slackChannel: settings?.slackChannel || "",
+            linearStateIds: settings?.linearStateIds || {},
+            baseUrl: origin,
+          },
+          endOrgId
+        );
+        if (r?.idea) {
+          shipped.push(ideaId);
+          deliverWebhooks(env, ctx, customerSlug, "idea.status_changed", r.idea);
+        }
+      } catch {}
+    }
+  }
+  if ((data.newReleases || []).length || shipped.length) {
+    await Promise.all([stampBoardWrite(origin, customerSlug), ...boardCacheKeys(origin, customerSlug).map((k) => caches.default.delete(k))]);
+  }
+  return { ok: true, newReleases: data.newReleases || [], shipped, errors: data.errors || [] };
+}
+
+async function syncAllGithubBoards(env, ctx) {
+  const data = await callWorkflow(env, GITHUB_RELEASES_WORKFLOW_ID, { op: "boards" });
+  const results = [];
+  for (const slug of data?.boards || []) {
+    try {
+      results.push({ slug, ...(await syncGithubForBoard(env, ctx, slug, PUBLIC_ORIGIN)) });
+    } catch (err) {
+      results.push({ slug, error: err.message });
+    }
+  }
+  return results;
+}
+
 async function getTenantOrgId(env, customerSlug) {
   if (TENANT_ORG_IDS[customerSlug]) return TENANT_ORG_IDS[customerSlug];
   try {
@@ -2108,6 +2187,125 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
       <button type="button" class="btn-submit" id="linearSyncToggleBtn" style="${settings.linearWebhookEnabled ? "background: var(--bad);" : ""}">${settings.linearWebhookEnabled ? "Turn off" : "Turn on"}</button>`
         : `<p class="hint">Connect a Linear team above and save, then come back here to turn on real-time sync.</p>`}
     </div>
+
+    <div class="card" id="githubCard" data-testid="github-card">
+      <h2>GitHub releases</h2>
+      <p class="hint">Follow up to 5 of your public repositories. Each new GitHub release appears on your <a href="/b/${encodeURIComponent(customerSlug)}/changelog" target="_blank" rel="noopener">public changelog</a>, and any idea whose link is in the release notes (for example <code>${escapeHtml(baseUrl)}/b/${escapeHtml(customerSlug)}/ideas/42</code>) is marked Shipped - announced in Slack, closed in Linear and emailed to its voters. Checked every 15 minutes, or press Check now.</p>
+      <div id="githubBody" data-testid="github-body"><p class="team-empty">Loading your GitHub repositories...</p></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+        <button type="button" class="btn-copy" id="githubSave" data-testid="github-save" hidden>Save repositories</button>
+        <button type="button" class="btn-copy" id="githubSync" data-testid="github-check-now" hidden>Check now</button>
+      </div>
+      <p class="hint" id="githubNote" role="status" style="margin:10px 0 0;"></p>
+    </div>
+    <script>
+      (function () {
+        var slug = ${JSON.stringify(customerSlug).replace(/</g, "\\u003c")};
+        var base = '/api/customers/' + encodeURIComponent(slug) + '/github';
+        var body = document.getElementById('githubBody');
+        var saveBtn = document.getElementById('githubSave');
+        var syncBtn = document.getElementById('githubSync');
+        var note = document.getElementById('githubNote');
+        var MAX = 5;
+        function esc(s) { var d = document.createElement('div'); d.innerText = s == null ? '' : String(s); return d.innerHTML; }
+        function say(text, tone) {
+          note.textContent = text || '';
+          note.style.color = tone === 'bad' ? 'var(--bad)' : tone === 'good' ? 'var(--good)' : '';
+        }
+        function checked(iso) {
+          if (!iso) return 'not checked yet';
+          var t = new Date(iso);
+          return isNaN(t) ? '' : 'checked ' + t.toLocaleString();
+        }
+        function selected() {
+          return Array.prototype.map.call(body.querySelectorAll('input[name=ghRepo]:checked'), function (c) { return c.value; });
+        }
+        function limit() {
+          var n = selected().length;
+          body.querySelectorAll('input[name=ghRepo]').forEach(function (c) { c.disabled = !c.checked && n >= MAX; });
+        }
+        function render(d) {
+          var followed = d.repos || [];
+          var names = (d.options || []).map(function (o) { return o.id; });
+          followed.forEach(function (f) { if (names.indexOf(f.repo) === -1) names.unshift(f.repo); });
+          var html = '';
+          if (!d.connected) {
+            html += '<p class="hint">Connect GitHub on the <a href="/b/' + encodeURIComponent(slug) + '/connect">Connect your tools</a> page first, then come back here to pick repositories.</p>';
+          } else if (!names.length) {
+            html += '<p class="hint">No public repositories found for @' + esc(d.login || '') + '.</p>';
+          }
+          if (names.length) {
+            if (d.login) html += '<p class="hint" style="margin:0 0 6px;">Connected as <b>@' + esc(d.login) + '</b>. Pick the repositories whose releases belong on this changelog:</p>';
+            html += '<div style="max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:9px;">' +
+              names.map(function (n) {
+                var f = followed.filter(function (r) { return r.repo === n; })[0];
+                var meta = f
+                  ? '<span style="margin-left:auto;font-size:11.5px;color:' + (f.last_error ? 'var(--bad)' : 'var(--text-faint)') + ';">' +
+                    esc(f.last_error ? 'last check failed: ' + f.last_error : checked(f.last_checked_at)) + '</span>'
+                  : '';
+                return '<label data-testid="github-repo-row" style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--border);font-size:13px;">' +
+                  '<input type="checkbox" name="ghRepo" value="' + esc(n) + '"' + (f ? ' checked' : '') + (d.connected ? '' : ' disabled') + ' /> <span>' + esc(n) + '</span>' + meta + '</label>';
+              }).join('') + '</div>';
+          }
+          var rel = d.releases || [];
+          if (rel.length) {
+            html += '<p class="hint" style="margin:12px 0 4px;">Latest releases on your changelog:</p><ul style="margin:0;padding-left:18px;font-size:13px;">' +
+              rel.map(function (r) {
+                return '<li><a href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(r.name || r.tag) + '</a> <span style="color:var(--text-faint);">' +
+                  esc(r.repo) + ' - ' + esc(new Date(r.published_at).toLocaleDateString()) + '</span></li>';
+              }).join('') + '</ul>';
+          }
+          body.innerHTML = html;
+          saveBtn.hidden = !d.connected || !names.length;
+          syncBtn.hidden = !d.connected || !followed.length;
+          body.querySelectorAll('input[name=ghRepo]').forEach(function (c) { c.addEventListener('change', limit); });
+          if (d.connected) limit();
+        }
+        function load() {
+          return fetch(base)
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (!d || !d.ok) throw new Error((d && d.error) || 'unavailable');
+              render(d);
+            })
+            .catch(function (e) { body.innerHTML = '<p class="hint">Could not load GitHub right now: ' + esc(e.message) + '.</p>'; });
+        }
+        saveBtn.addEventListener('click', function () {
+          saveBtn.disabled = true;
+          say('Saving...');
+          fetch(base + '/repos', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ repos: selected() }) })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (!d || !d.ok) throw new Error((d && d.error) || 'save failed');
+              var n = d.repos.length;
+              say(n ? 'Following ' + n + ' repositor' + (n === 1 ? 'y' : 'ies') + '. Releases published from now on will appear on your changelog.' : 'Not following any repositories.', 'good');
+              return load();
+            })
+            .catch(function (e) { say('Could not save: ' + e.message, 'bad'); })
+            .then(function () { saveBtn.disabled = false; });
+        });
+        syncBtn.addEventListener('click', function () {
+          syncBtn.disabled = true;
+          say('Checking GitHub...');
+          fetch(base + '/sync', { method: 'POST' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (!d || !d.ok) throw new Error((d && d.error) || 'check failed');
+              var n = (d.newReleases || []).length;
+              var s = (d.shipped || []).length;
+              var errs = d.errors || [];
+              var msg = n ? n + ' new release' + (n === 1 ? '' : 's') + ' added to your changelog' : 'No new releases since the last check';
+              if (s) msg += '; ' + s + ' linked idea' + (s === 1 ? '' : 's') + ' marked Shipped';
+              if (errs.length) msg += '. ' + errs.map(function (e) { return e.repo + ': ' + e.error; }).join('; ');
+              say(msg + '.', errs.length ? 'bad' : 'good');
+              return load();
+            })
+            .catch(function (e) { say('Could not check: ' + e.message, 'bad'); })
+            .then(function () { syncBtn.disabled = false; });
+        });
+        load();
+      })();
+    </script>
 
     <div class="card" id="deliveriesCard" data-testid="deliveries-card">
       <h2>Deliveries from your tools</h2>
@@ -4289,7 +4487,8 @@ function changelogPage(customerSlug, isOwner) {
             '<div class="entry-body">' +
             '<span class="chip" style="background:' + cc.bg + ';color:' + cc.fg + '">' + escapeHtml(it.category) + '</span>' +
             '<div class="entry-title">' + escapeHtml(it.title) + '</div>' +
-            (it.description ? '<div class="entry-desc">' + escapeHtml(it.description) + '</div>' : '') +
+            (it.description ? '<div class="entry-desc"' + (it.kind === 'release' ? ' style="white-space:pre-line"' : '') + '>' + escapeHtml(it.description) + '</div>' : '') +
+            (it.url ? '<a href="' + escapeHtml(it.url) + '" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;font-size:12.5px;color:var(--accent);text-decoration:none;">' + escapeHtml(it.repo ? it.repo + ' release on GitHub' : 'View on GitHub') + ' &#8599;</a>' : '') +
             '</div>' +
             '</div>';
         }).join('');
@@ -5173,7 +5372,8 @@ function changelogWidgetPage(customerSlug, color, theme) {
           return '<div class="entry">' +
             '<div class="entry-date">' + date + '</div>' +
             '<div class="entry-title">' + escapeHtml(it.title) + '</div>' +
-            (it.description ? '<div class="entry-desc">' + escapeHtml(it.description) + '</div>' : '') +
+            (it.description ? '<div class="entry-desc"' + (it.kind === 'release' ? ' style="white-space:pre-line"' : '') + '>' + escapeHtml(it.description) + '</div>' : '') +
+            (it.url ? '<a href="' + escapeHtml(it.url) + '" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;font-size:12.5px;color:var(--accent);text-decoration:none;">' + escapeHtml(it.repo ? it.repo + ' release on GitHub' : 'View on GitHub') + ' &#8599;</a>' : '') +
             '</div>';
         }).join('');
 
@@ -6406,7 +6606,7 @@ const app = {
           .map(
             (it) => `<item>
       <title>${xmlEscape(it.title)}</title>
-      <link>${xmlEscape(siteUrl)}</link>
+      <link>${xmlEscape(it.url || siteUrl)}</link>
       <guid isPermaLink="false">${customerSlug}-changelog-${it.id}</guid>
       <pubDate>${new Date(it.shipped_at).toUTCString()}</pubDate>
       <category>${xmlEscape(it.category)}</category>
@@ -6529,6 +6729,9 @@ const app = {
           return html(connectUnavailablePage(customerSlug, isOwner));
         }
       }
+      // Tier limits gate which tools the hub can add, so the catalogue goes first.
+      await ensureTierCatalogue(env).catch(() => {});
+      await ensureConnectInstallations(env, endOrgId, customerSlug).catch(() => {});
       return html(connectPage(customerSlug, endOrgId, isOwner));
     }
 
@@ -6560,6 +6763,48 @@ const app = {
             `Close this tab and try again from the Connect page in a minute.`
           )
         );
+      }
+    }
+
+    const githubMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/github(\/repos|\/sync)?$/);
+    if (githubMatch && ((request.method === "GET" && !githubMatch[2]) || (request.method === "POST" && githubMatch[2]))) {
+      const customerSlug = githubMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      const endOrgId = await getTenantOrgId(env, customerSlug);
+      if (!endOrgId) return json({ ok: false, error: "no connected workspace for this customer yet" }, 404);
+      try {
+        if (githubMatch[2] === "/sync") {
+          return json(await syncGithubForBoard(env, ctx, customerSlug, url.origin, endOrgId));
+        }
+        if (githubMatch[2] === "/repos") {
+          let body = {};
+          try {
+            body = await request.json();
+          } catch {}
+          const repos = Array.isArray(body.repos) ? body.repos : [];
+          const data = await callWorkflow(env, GITHUB_RELEASES_WORKFLOW_ID, { op: "set_repos", customerSlug, repos }, endOrgId);
+          return json(data, data?.ok ? 200 : 400);
+        }
+        const [available, recorded] = await Promise.allSettled([
+          callWorkflow(env, GITHUB_RELEASES_WORKFLOW_ID, { op: "available", customerSlug }, endOrgId),
+          callWorkflow(env, GITHUB_RELEASES_WORKFLOW_ID, { op: "releases", customerSlug }),
+        ]);
+        const a = available.status === "fulfilled" ? available.value : null;
+        const r = recorded.status === "fulfilled" ? recorded.value : null;
+        return json({
+          ok: true,
+          connected: Boolean(a?.ok),
+          login: a?.login || null,
+          options: a?.options || [],
+          repos: r?.repos || [],
+          releases: (r?.releases || [])
+            .slice(0, 5)
+            .map((x) => ({ repo: x.repo, tag: x.tag, name: x.name, url: x.html_url, published_at: x.published_at })),
+        });
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
       }
     }
 
@@ -7669,6 +7914,15 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
+    if (event.cron === GITHUB_SYNC_CRON) {
+      ctx.waitUntil(
+        syncAllGithubBoards(env, ctx).then((boards) => {
+          const problems = boards.filter((b) => b.error || (b.errors || []).length);
+          if (problems.length) console.error("github release sync", JSON.stringify(problems));
+        }, (err) => console.error("github release sync failed", err.message))
+      );
+      return;
+    }
     if (event.cron === TIER_SYNC_CRON) {
       ctx.waitUntil(
         syncCustomerTiers(env).then((r) => {
