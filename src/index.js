@@ -778,6 +778,76 @@ async function replayBoardDelivery(env, customerSlug, kind, id) {
   return { status: 200, body: { ok: true, kind, result: r.data } };
 }
 
+// Stands in for a customer's own product in demos: an ordinary SaaS page in
+// that customer's colours, with RequestHub added the way a customer adds it -
+// the one-line embed snippet, nothing else.
+function exampleAppPage(customerSlug, origin) {
+  const name = customerSlug.split("-").map((w) => (w === "saas" ? "" : w.charAt(0).toUpperCase() + w.slice(1))).filter(Boolean).join(" ") || customerSlug;
+  const snippet = `<script src="${origin}/embed.js" data-customer="${customerSlug}" data-color="#0f766e"></script>`;
+  const bars = [42, 55, 48, 61, 70, 66, 78, 74, 83, 91, 88, 96];
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>${escapeHtml(name)} Analytics</title>
+  <style>
+    :root { --ink: #0f172a; --muted: #64748b; --line: #e2e8f0; --bg: #f8fafc; --brand: #0f766e; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+    header { background: #fff; border-bottom: 1px solid var(--line); padding: 14px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .logo { width: 30px; height: 30px; border-radius: 8px; background: var(--brand); color: #fff; display: grid; place-items: center; font-weight: 800; }
+    header b { font-size: 15px; }
+    nav { display: flex; gap: 16px; margin-left: auto; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+    main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 96px; }
+    .note { background: #ecfeff; border: 1px solid #a5f3fc; border-radius: 10px; padding: 12px 14px; font-size: 13px; color: #155e75; margin-bottom: 20px; line-height: 1.5; }
+    .note code { display: block; margin-top: 6px; background: #fff; border: 1px solid #cffafe; border-radius: 6px; padding: 8px; font-size: 12px; overflow-x: auto; white-space: pre; color: var(--ink); }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .sub { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .kpi { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+    .kpi span { color: var(--muted); font-size: 12px; }
+    .kpi strong { display: block; font-size: 24px; margin-top: 4px; }
+    .kpi em { font-style: normal; font-size: 12px; color: #15803d; }
+    .panel { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .panel h2 { font-size: 14px; margin: 0 0 12px; }
+    .chart { display: flex; align-items: flex-end; gap: 8px; height: 160px; }
+    .chart div { flex: 1; background: linear-gradient(180deg, #14b8a6, var(--brand)); border-radius: 4px 4px 0 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    td, th { text-align: left; padding: 8px 6px; border-top: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; border-top: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">${escapeHtml(name.charAt(0))}</div><b>${escapeHtml(name)} Analytics</b>
+    <nav><span>Dashboards</span><span>Reports</span><span>Alerts</span><span>Settings</span></nav>
+  </header>
+  <main>
+    <div class="note">This page stands in for ${escapeHtml(name)}'s own product. The feedback button in the corner is RequestHub, added with this one line:<code>${escapeHtml(snippet)}</code></div>
+    <h1>Revenue overview</h1>
+    <p class="sub">Last 12 months &middot; all regions</p>
+    <div class="kpis">
+      <div class="kpi"><span>Monthly recurring revenue</span><strong>$482,300</strong><em>+8.2% vs last month</em></div>
+      <div class="kpi"><span>Active accounts</span><strong>1,284</strong><em>+41 this month</em></div>
+      <div class="kpi"><span>Net revenue retention</span><strong>118%</strong><em>+3 pts</em></div>
+      <div class="kpi"><span>Churned accounts</span><strong>9</strong><em>-4 vs last month</em></div>
+    </div>
+    <div class="panel"><h2>MRR by month</h2><div class="chart">${bars.map((h) => `<div style="height:${h}%"></div>`).join("")}</div></div>
+    <div class="panel"><h2>Top accounts</h2>
+      <table><tr><th>Account</th><th>Plan</th><th>MRR</th><th>Health</th></tr>
+        <tr><td>Northwind</td><td>Enterprise</td><td>$24,000</td><td>Healthy</td></tr>
+        <tr><td>Globex</td><td>Growth</td><td>$9,800</td><td>Watch</td></tr>
+        <tr><td>Initech</td><td>Growth</td><td>$7,450</td><td>Healthy</td></tr>
+      </table>
+    </div>
+  </main>
+  ${snippet}
+</body>
+</html>`;
+}
+
 async function callWorkflow(env, workflowId, input, endOrgId) {
   return (await runWorkflow(env, workflowId, input, endOrgId)).data;
 }
@@ -3310,11 +3380,22 @@ function boardPage(customerSlug, isOwner) {
 
     var commentsByIdea = {};
 
+    // Fastn's list can trail a write by a second or two, so an idea this
+    // visitor just submitted is shown from the submit response and kept on
+    // the list until the server's own copy includes it.
+    var justSubmitted = [];
+    function withJustSubmitted(list) {
+      var now = Date.now();
+      justSubmitted = justSubmitted.filter(function (p) {
+        return now - p.at < 60000 && !list.some(function (i) { return i.id === p.idea.id; });
+      });
+      return justSubmitted.map(function (p) { return p.idea; }).concat(list);
+    }
     function load() {
       fetch('/api/ideas?customer=' + encodeURIComponent(customerSlug) + '&includeComments=1')
         .then(function (r) { return r.json(); })
         .then(function (d) {
-          allIdeas = d.ideas || [];
+          allIdeas = withJustSubmitted(d.ideas || []);
           if (d.statusLabels) statusLabels = d.statusLabels;
           if (d.categories && d.categories.length) categories = d.categories;
           commentsByIdea = d.commentsByIdea || {};
@@ -3460,6 +3541,9 @@ function boardPage(customerSlug, isOwner) {
         .then(function (d) {
           if (!d || d.ok === false || !d.idea) throw new Error((d && d.error) || 'not saved');
           boardSubmitKey = null;
+          justSubmitted.push({ idea: d.idea, at: Date.now() });
+          allIdeas = withJustSubmitted(allIdeas);
+          render();
           document.getElementById('title').value = '';
           document.getElementById('description').value = '';
           document.getElementById('submitterEmail').value = '';
@@ -4881,7 +4965,11 @@ function embedJs() {
   // In target mode there's no floating bubble to show before it's opened -
   // the customer's own button is the only trigger - so "collapsed" means
   // zero-size and click-through rather than a visible 64px circle.
-  var COLLAPSED = targetSelector ? { width: '0px', height: '0px' } : { width: '64px', height: '64px' };
+  // The 64px launcher sits centred in a larger frame so its drop shadow is not
+  // cut off square at the frame's edge; the frame moves out by the same
+  // padding, so the button stays exactly where it was.
+  var PAD = targetSelector ? 0 : 16;
+  var COLLAPSED = targetSelector ? { width: '0px', height: '0px' } : { width: (64 + 2 * PAD) + 'px', height: (64 + 2 * PAD) + 'px' };
   var POSITIONS = {
     'bottom-right': { bottom: '20px', right: '20px' },
     'bottom-left': { bottom: '20px', left: '20px' },
@@ -4889,7 +4977,10 @@ function embedJs() {
     'top-left': { top: '20px', left: '20px' },
   };
   var corner = POSITIONS[position] || POSITIONS['bottom-right'];
-  var cornerCss = Object.keys(corner).map(function (k) { return k + ':' + corner[k]; });
+  var cornerCss = Object.keys(corner).map(function (k) { return k + ':' + (parseInt(corner[k], 10) - PAD) + 'px'; });
+  function place(open) {
+    Object.keys(corner).forEach(function (k) { iframe.style[k] = (parseInt(corner[k], 10) - (open ? 0 : PAD)) + 'px'; });
+  }
 
   var widgetUrl = origin + '/widget.html?customer=' + encodeURIComponent(customer);
   if (color) widgetUrl += '&color=' + encodeURIComponent(color);
@@ -4914,11 +5005,13 @@ function embedJs() {
     if (e.source !== iframe.contentWindow || e.origin !== origin) return;
     if (!e.data || e.data.source !== 'requesthub-widget') return;
     if (e.data.type === 'open') {
+      place(true);
       iframe.style.width = EXPANDED.width;
       iframe.style.height = EXPANDED.height;
       iframe.style.zIndex = '2147483001';
       if (targetSelector) iframe.style.pointerEvents = 'auto';
     } else if (e.data.type === 'close') {
+      place(false);
       iframe.style.width = COLLAPSED.width;
       iframe.style.height = COLLAPSED.height;
       iframe.style.zIndex = '2147483000';
@@ -5170,9 +5263,10 @@ function widgetPage(customerSlug, color, theme) {
     ${WIDGET_THEME_VARS}
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; background: transparent; font-family: -apple-system, sans-serif; overflow: hidden; }
+    body:not(.open) { display: flex; align-items: center; justify-content: center; }
     .launcher {
-      width: 64px; height: 64px; border-radius: 50%; background: ${accent}; border: none; cursor: pointer;
-      display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 20px rgba(0,0,0,.25);
+      width: 64px; height: 64px; border-radius: 50%; background: ${accent}; border: none; cursor: pointer; flex: none;
+      display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,.22);
     }
     .launcher:hover { filter: brightness(0.93); }
     .launcher svg { width: 26px; height: 26px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -5701,12 +5795,38 @@ function boardCacheKeyFor(url) {
   return null;
 }
 
-async function refreshBoardCache(cache, key, request, env, ctx) {
+// A write stamps the board, and a cached copy read from the backend before
+// that stamp is never served: a background refresh that started just before
+// a write would otherwise put the old list back after the write purged it.
+function boardWriteStampKey(origin, slug) {
+  return `${origin}/__rh/written/${slug}`;
+}
+
+function slugOfBoardCacheKey(key) {
+  const u = new URL(key);
+  return u.searchParams.get("customer") || (u.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\//) || [])[1] || "";
+}
+
+async function stampBoardWrite(origin, slug) {
+  await caches.default.put(
+    boardWriteStampKey(origin, slug),
+    new Response(String(Date.now()), { headers: { "cache-control": `public, max-age=${Math.ceil(BOARD_CACHE_STALE_MAX_MS / 1000) + 30}` } })
+  );
+}
+
+// Fastn's list trails a write by a second or two, so a read in the first
+// seconds after a write may not include it yet: serve it, but don't cache it.
+const BOARD_WRITE_SETTLE_MS = 5000;
+
+async function refreshBoardCache(cache, key, request, env, ctx, writtenAt = 0) {
+  // Stamped with when the read began, so it loses to any write that lands
+  // while it is in flight.
+  const startedAt = Date.now();
   const res = await app.fetch(new Request(key, { headers: request.headers }), env, ctx);
-  if (res.status === 200) {
+  if (res.status === 200 && startedAt - writtenAt >= BOARD_WRITE_SETTLE_MS) {
     const copy = new Response(res.clone().body, res);
     copy.headers.set("cache-control", `public, max-age=${BOARD_CACHE_MAX_AGE_S}`);
-    copy.headers.set("x-rh-cached-at", String(Date.now()));
+    copy.headers.set("x-rh-cached-at", String(startedAt));
     await cache.put(key, copy);
   }
   return res;
@@ -5714,16 +5834,18 @@ async function refreshBoardCache(cache, key, request, env, ctx) {
 
 async function cachedBoardRead(key, request, env, ctx) {
   const cache = caches.default;
-  const hit = await cache.match(key);
-  const hitAge = hit ? Date.now() - Number(hit.headers.get("x-rh-cached-at") || 0) : Infinity;
+  const [hit, stamp] = await Promise.all([cache.match(key), cache.match(boardWriteStampKey(new URL(key).origin, slugOfBoardCacheKey(key)))]);
+  const cachedAt = hit ? Number(hit.headers.get("x-rh-cached-at") || 0) : 0;
+  const writtenAt = stamp ? Number(await stamp.text()) || 0 : 0;
+  const hitAge = hit && cachedAt >= writtenAt ? Date.now() - cachedAt : Infinity;
   if (hit && hitAge <= BOARD_CACHE_STALE_MAX_MS) {
     const age = hitAge;
-    if (age > BOARD_CACHE_FRESH_MS) ctx.waitUntil(refreshBoardCache(cache, key, request, env, ctx).catch(() => {}));
+    if (age > BOARD_CACHE_FRESH_MS) ctx.waitUntil(refreshBoardCache(cache, key, request, env, ctx, writtenAt).catch(() => {}));
     const out = new Response(hit.body, hit);
     out.headers.set("cache-control", "no-store");
     return out;
   }
-  const res = await refreshBoardCache(cache, key, request, env, ctx);
+  const res = await refreshBoardCache(cache, key, request, env, ctx, writtenAt);
   const out = new Response(res.body, res);
   out.headers.set("cache-control", "no-store");
   return out;
@@ -6968,12 +7090,11 @@ const app = {
       }
       const submitCustomerSlug = body.customerSlug || "demo";
       try {
-        const endOrgId = await getTenantOrgId(env, submitCustomerSlug);
-        let slackChannel;
-        try {
-          const settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug: submitCustomerSlug });
-          slackChannel = settings?.slackChannel || undefined;
-        } catch {}
+        const [endOrgId, settings] = await Promise.all([
+          getTenantOrgId(env, submitCustomerSlug),
+          callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug: submitCustomerSlug }).catch(() => null),
+        ]);
+        const slackChannel = settings?.slackChannel || undefined;
         const { data, replayed } = await runWorkflow(
           env,
           SUBMIT_WORKFLOW_ID,
@@ -7374,6 +7495,11 @@ const app = {
     if (request.method === "GET" && url.pathname === "/api/v1/openapi.json") {
       return json(partnerOpenApi(url.origin), 200, { "access-control-allow-origin": "*", "cache-control": "public, max-age=300" });
     }
+    const exampleMatch = url.pathname.match(/^\/example\/([a-z0-9-]+)\/?$/);
+    if (request.method === "GET" && exampleMatch) {
+      return html(exampleAppPage(exampleMatch[1], url.origin));
+    }
+
     if (request.method === "GET" && url.pathname === "/developers") {
       return html(developersPage(url.origin));
     }
@@ -7405,12 +7531,11 @@ const app = {
           return json({ ok: false, error: "title is required" }, 400);
         }
         try {
-          const endOrgId = await getTenantOrgId(env, apiCustomerSlug);
-          let slackChannel;
-          try {
-            const settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug: apiCustomerSlug });
-            slackChannel = settings?.slackChannel || undefined;
-          } catch {}
+          const [endOrgId, settings] = await Promise.all([
+            getTenantOrgId(env, apiCustomerSlug),
+            callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug: apiCustomerSlug }).catch(() => null),
+          ]);
+          const slackChannel = settings?.slackChannel || undefined;
           const { data, replayed } = await runWorkflow(
             env,
             SUBMIT_WORKFLOW_ID,
@@ -7547,7 +7672,7 @@ export default {
       reqBody = await reqCopy.json();
     } catch {}
     const slugs = await writeTenants(request, reqBody, res);
-    await Promise.all([...slugs].flatMap((s) => boardCacheKeys(url.origin, s).map((k) => caches.default.delete(k))));
+    await Promise.all([...slugs].flatMap((s) => [stampBoardWrite(url.origin, s), ...boardCacheKeys(url.origin, s).map((k) => caches.default.delete(k))]));
     return res;
   },
 
