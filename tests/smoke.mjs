@@ -440,6 +440,14 @@ async function run() {
     const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/claude-url", { method: "POST" });
     assert(r.status === 401, "status " + r.status);
   });
+  await check("re-running AI triage requires auth", async () => {
+    const r = await fetch(BASE_URL + "/api/ideas/1/ai-triage", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ customerSlug: CUSTOMER }) });
+    assert(r.status === 401, "status " + r.status);
+  });
+  await check("dismissing an AI duplicate requires auth", async () => {
+    const r = await fetch(BASE_URL + "/api/ideas/1/ai-duplicate-dismiss", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ customerSlug: CUSTOMER, duplicateId: 2 }) });
+    assert(r.status === 401, "status " + r.status);
+  });
   await check("GitHub releases status requires auth", async () => {
     const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/github");
     assert(r.status === 401, "status " + r.status);

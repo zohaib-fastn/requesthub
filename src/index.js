@@ -36,6 +36,7 @@ const DELETE_IDEA_WORKFLOW_ID = "wf_90a8f1268843";
 const LIST_STATUS_HISTORY_WORKFLOW_ID = "wf_144ac631f830";
 const LIST_CHANGELOG_WORKFLOW_ID = "wf_69d695b3974e";
 const GITHUB_RELEASES_WORKFLOW_ID = "wf_cb5e915de8c9";
+const AI_TRIAGE_WORKFLOW_ID = "wf_a7cdbc609baf";
 const GET_BOARD_STATS_WORKFLOW_ID = "wf_4146c0839e38";
 const SET_IDEA_PINNED_WORKFLOW_ID = "wf_50b43c697fb7";
 const LIST_SEARCHABLE_COMMENTS_WORKFLOW_ID = "wf_8a542072003b";
@@ -1351,9 +1352,29 @@ async function syncGithubForBoard(env, ctx, customerSlug, origin, endOrgId = nul
     }
   }
   if ((data.newReleases || []).length || shipped.length) {
-    await Promise.all([stampBoardWrite(origin, customerSlug), ...boardCacheKeys(origin, customerSlug).map((k) => caches.default.delete(k))]);
+    await purgeBoard(origin, customerSlug);
   }
   return { ok: true, newReleases: data.newReleases || [], shipped, errors: data.errors || [] };
+}
+
+async function purgeBoard(origin, slug) {
+  await Promise.all([stampBoardWrite(origin, slug), ...boardCacheKeys(origin, slug).map((k) => caches.default.delete(k))]);
+}
+
+// Runs after the submitter already has their answer: Gemini files the idea
+// (category when nobody chose one, tags, a one-line summary, likely
+// duplicates, a release note for later) and the board is re-read so it shows.
+// The workflow answers ok:true with "skipped" when the model is unavailable.
+async function aiTriageIdea(env, origin, slug, ideaId) {
+  try {
+    const data = await callWorkflow(env, AI_TRIAGE_WORKFLOW_ID, { op: "triage", customerSlug: slug, ideaId: Number(ideaId) });
+    if (data?.ai) await purgeBoard(origin, slug);
+    if (data?.skipped) console.error("ai triage skipped", slug, ideaId, data.skipped);
+    return data;
+  } catch (err) {
+    console.error("ai triage failed", slug, ideaId, err.message);
+    return { ok: false, error: err.message };
+  }
 }
 
 async function syncAllGithubBoards(env, ctx) {
@@ -4672,6 +4693,17 @@ function adminPage(customerSlug, isOwner) {
     .tag-edit-input:hover { border-color: var(--border); color: var(--text); }
     .tag-edit-input:focus { border-color: var(--accent); color: var(--text); outline: 2px solid var(--accent); outline-offset: 1px; }
     .empty-col { color: var(--text-faint); font-size: 12px; padding: 10px 2px; }
+    .card-ai { margin-top: 6px; font-size: 11.5px; color: var(--text); line-height: 1.4; overflow-wrap: anywhere; }
+    .ai-pill { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: .05em; padding: 1px 5px; border-radius: 5px; background: var(--accent-tint); color: var(--accent); margin-right: 5px; vertical-align: 1px; }
+    .chip .ai-pill { margin: 0 0 0 2px; padding: 0 4px; background: var(--card); }
+    .ai-dup { margin-top: 8px; padding: 7px 8px; border-radius: 8px; background: var(--warn-tint); color: var(--text); font-size: 11.5px; line-height: 1.4; overflow-wrap: anywhere; }
+    .ai-dup a { color: inherit; font-weight: 600; }
+    .ai-dup-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+    .ai-dup-actions button { border: 1px solid transparent; border-radius: 6px; padding: 3px 9px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .ai-merge-btn { background: var(--accent); color: #fff; }
+    .ai-dismiss-btn { background: var(--card); color: var(--text-muted); border-color: var(--border) !important; }
+    .ai-run-btn { border: none; cursor: pointer; font-family: inherit; }
+    .ai-run-btn[disabled] { opacity: .6; cursor: progress; }
   </style>
 </head>
 <body>
@@ -4787,26 +4819,11 @@ function adminPage(customerSlug, isOwner) {
       const a = allIdeas.find(function (i) { return i.id === ids[0]; });
       const b = allIdeas.find(function (i) { return i.id === ids[1]; });
       if (!a || !b) return;
-      const canon = a.votes !== b.votes ? (a.votes > b.votes ? a : b) : (a.id < b.id ? a : b);
-      const dup = canon === a ? b : a;
-      if (!window.confirm(
-        '"' + dup.title + '" will be merged into "' + canon.title + '".\\n\\n' +
-        'Votes, comments and subscribers move to the kept idea; the duplicate is hidden from the board but its link still redirects here. This cannot be undone. Continue?'
-      )) return;
-      fetch('/api/ideas/' + dup.id + '/merge', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ customerSlug: customerSlug, canonicalId: canon.id }),
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (!d.ok) {
-            alert(d.error || 'Could not merge these ideas right now.');
-            return;
-          }
-          selectedIds.clear();
-          load();
-        });
+      mergePair(a, b).then(function (merged) {
+        if (!merged) return;
+        selectedIds.clear();
+        load();
+      });
     });
 
     document.getElementById('bulkDeleteBtn').addEventListener('click', function () {
@@ -4830,6 +4847,47 @@ function adminPage(customerSlug, isOwner) {
       renderBulkBar();
       render();
     });
+
+    function escapeAttr(s) {
+      return escapeHtml(s).replace(/"/g, '&quot;');
+    }
+
+    // Only suggestions that are still open on this board: a merged or deleted
+    // idea drops out of allIdeas, and its suggestion with it.
+    function aiDuplicatesHtml(idea) {
+      return (idea.ai_duplicates || []).filter(function (d) {
+        return allIdeas.some(function (o) { return o.id === d.id; });
+      }).map(function (d) {
+        return '<div class="ai-dup" data-testid="ai-duplicate-' + idea.id + '-' + d.id + '"' + (d.reason ? ' title="' + escapeAttr(d.reason) + '"' : '') + '>' +
+          '<span class="ai-pill">AI</span>Possible duplicate of <a href="/b/' + encodeURIComponent(customerSlug) + '/ideas/' + d.id + '" target="_blank" rel="noopener">#' + d.id + ' ' + escapeHtml(d.title) + '</a>' +
+          '<div class="ai-dup-actions">' +
+          '<button type="button" class="ai-merge-btn" data-idea-id="' + idea.id + '" data-dup-id="' + d.id + '" data-testid="ai-merge-' + idea.id + '-' + d.id + '">Merge</button>' +
+          '<button type="button" class="ai-dismiss-btn" data-idea-id="' + idea.id + '" data-dup-id="' + d.id + '" data-testid="ai-dismiss-' + idea.id + '-' + d.id + '">Not a duplicate</button>' +
+          '</div></div>';
+      }).join('');
+    }
+
+    function mergePair(a, b) {
+      const canon = a.votes !== b.votes ? (a.votes > b.votes ? a : b) : (a.id < b.id ? a : b);
+      const dup = canon === a ? b : a;
+      if (!window.confirm(
+        '"' + dup.title + '" will be merged into "' + canon.title + '".\\n\\n' +
+        'Votes, comments and subscribers move to the kept idea; the duplicate is hidden from the board but its link still redirects here. This cannot be undone. Continue?'
+      )) return Promise.resolve(false);
+      return fetch('/api/ideas/' + dup.id + '/merge', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ customerSlug: customerSlug, canonicalId: canon.id }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok) {
+            alert(d.error || 'Could not merge these ideas right now.');
+            return false;
+          }
+          return true;
+        });
+    }
 
     function render() {
       const board = document.getElementById('board');
@@ -4857,15 +4915,21 @@ function adminPage(customerSlug, isOwner) {
               if (i.linear_issue_url) badges.push('<a class="chip badge" href="' + i.linear_issue_url + '" target="_blank" rel="noopener">Linear &#8599;</a>');
               if (i.notion_archived_at) badges.push('<span class="chip badge">Notion</span>');
               badges.push('<a class="chip badge" href="/b/' + encodeURIComponent(customerSlug) + '/ideas/' + i.id + '" title="Open and reply">Reply</a>');
+              if (!i.ai_summary) badges.push('<button type="button" class="chip badge ai-run-btn" data-idea-id="' + i.id + '" data-testid="ai-run-' + i.id + '" title="Summarise, tag and look for duplicates with AI">AI triage</button>');
               var catColor = categoryColor(i.category);
+              var aiCategory = i.ai_previous_category && i.ai_previous_category !== i.category;
               return '<div class="card' + (selectedIds.has(i.id) ? ' selected' : '') + (i.is_pinned ? ' pinned' : '') + '" style="border-left-color:' + catColor.fg + '" draggable="true" data-idea-id="' + i.id + '">' +
                 '<input type="checkbox" class="card-select" data-idea-id="' + i.id + '"' + (selectedIds.has(i.id) ? ' checked' : '') + ' title="Select for bulk actions" />' +
                 '<button type="button" class="card-pin-btn' + (i.is_pinned ? ' active' : '') + '" data-idea-id="' + i.id + '" data-pinned="' + (i.is_pinned ? '1' : '0') + '" title="' + (i.is_pinned ? 'Unpin' : 'Pin to top') + '">&#128204;</button>' +
                 '<button type="button" class="card-delete-btn" data-idea-id="' + i.id + '" title="Delete">&times;</button>' +
                 '<div class="card-title">' + escapeHtml(i.title) + '</div>' +
                 (i.description ? '<div class="card-desc">' + escapeHtml(i.description) + '</div>' : '') +
+                (i.ai_summary ? '<div class="card-ai" data-testid="ai-summary-' + i.id + '"><span class="ai-pill">AI</span>' + escapeHtml(i.ai_summary) + '</div>' : '') +
+                aiDuplicatesHtml(i) +
                 '<div class="card-meta">' +
-                '<span class="chip" style="background:' + catColor.bg + ';color:' + catColor.fg + '">' + escapeHtml(i.category) + '</span>' +
+                '<span class="chip" style="background:' + catColor.bg + ';color:' + catColor.fg + '"' +
+                  (aiCategory ? ' title="Filed as ' + escapeAttr(i.ai_previous_category) + ' - AI moved it to ' + escapeAttr(i.category) + '" data-testid="ai-category-' + i.id + '"' : '') + '>' +
+                  escapeHtml(i.category) + (aiCategory ? '<span class="ai-pill">AI</span>' : '') + '</span>' +
                 (i.tags || []).map(function (t) { return '<span class="tag-chip">#' + escapeHtml(t) + '</span>'; }).join('') +
                 badges.join('') +
                 '<span class="card-votes">' + i.votes + ' votes</span>' +
@@ -4918,6 +4982,51 @@ function adminPage(customerSlug, isOwner) {
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ customerSlug: customerSlug, pinned: !currentlyPinned }),
           }).then(function () { load(); });
+        });
+      });
+
+      board.querySelectorAll('.ai-merge-btn').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var a = allIdeas.find(function (i) { return String(i.id) === btn.getAttribute('data-idea-id'); });
+          var b = allIdeas.find(function (i) { return String(i.id) === btn.getAttribute('data-dup-id'); });
+          if (!a || !b) return;
+          mergePair(a, b).then(function (merged) { if (merged) load(); });
+        });
+      });
+
+      board.querySelectorAll('.ai-dismiss-btn').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          btn.disabled = true;
+          fetch('/api/ideas/' + btn.getAttribute('data-idea-id') + '/ai-duplicate-dismiss', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ customerSlug: customerSlug, duplicateId: Number(btn.getAttribute('data-dup-id')) }),
+          }).then(function () { load(); });
+        });
+      });
+
+      board.querySelectorAll('.ai-run-btn').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          btn.disabled = true;
+          btn.textContent = 'Thinking...';
+          fetch('/api/ideas/' + btn.getAttribute('data-idea-id') + '/ai-triage', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ customerSlug: customerSlug }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (d && d.ai) return load();
+              btn.disabled = false;
+              btn.textContent = 'AI unavailable - retry';
+            })
+            .catch(function () {
+              btn.disabled = false;
+              btn.textContent = 'AI unavailable - retry';
+            });
         });
       });
 
@@ -4993,6 +5102,23 @@ function adminPage(customerSlug, isOwner) {
     document.getElementById('search').addEventListener('input', render);
     document.getElementById('category').addEventListener('change', render);
 
+    // New ideas arrive from the widget, Slack and the API while this page is
+    // open, and AI triage lands a few seconds after each one - so the board
+    // re-reads itself, except while someone is mid-edit or has a selection.
+    var refreshTimer = null;
+    function scheduleRefresh() {
+      clearTimeout(refreshTimer);
+      var awaitingAi = allIdeas.some(function (i) {
+        return !i.ai_summary && Date.now() - new Date(i.created_at).getTime() < 90000;
+      });
+      refreshTimer = setTimeout(function () {
+        var active = document.activeElement;
+        var busy = selectedIds.size > 0 || draggingIdeaId || (active && active.classList && active.classList.contains('tag-edit-input'));
+        if (document.visibilityState === 'visible' && !busy) load();
+        else scheduleRefresh();
+      }, awaitingAi ? 4000 : 20000);
+    }
+
     function load() {
       fetch('/api/ideas?customer=' + encodeURIComponent(customerSlug))
         .then(function (r) { return r.json(); })
@@ -5002,6 +5128,7 @@ function adminPage(customerSlug, isOwner) {
           if (d.categories && d.categories.length) { categories = d.categories; populateCategorySelect(); }
           render();
           renderBulkBar();
+          scheduleRefresh();
         })
         .catch(function () {
           document.getElementById('board').innerHTML =
@@ -7433,6 +7560,7 @@ const app = {
         );
         if (data?.idea && !replayed) {
           deliverWebhooks(env, ctx, submitCustomerSlug, "idea.created", data.idea);
+          ctx.waitUntil(aiTriageIdea(env, url.origin, submitCustomerSlug, data.idea.id));
         }
         return json(data);
       } catch (err) {
@@ -7737,6 +7865,45 @@ const app = {
       }
     }
 
+    const aiTriageMatch = url.pathname.match(/^\/api\/ideas\/(\d+)\/(ai-triage|ai-duplicate-dismiss)$/);
+    if (request.method === "POST" && aiTriageMatch) {
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ ok: false, error: "invalid JSON body" }, 400);
+      }
+      const aiCustomerSlug = String(body.customerSlug || "").trim();
+      if (!aiCustomerSlug) {
+        return json({ ok: false, error: "customerSlug is required" }, 400);
+      }
+      if (!(await requireAuth(request, env, aiCustomerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      const aiIdeaId = Number(aiTriageMatch[1]);
+      try {
+        if (aiTriageMatch[2] === "ai-triage") {
+          const data = await callWorkflow(env, AI_TRIAGE_WORKFLOW_ID, { op: "triage", customerSlug: aiCustomerSlug, ideaId: aiIdeaId });
+          if (data?.ok === false) return json(data, 404);
+          return json(data);
+        }
+        const duplicateId = Number(body.duplicateId);
+        if (!Number.isInteger(duplicateId) || duplicateId <= 0) {
+          return json({ ok: false, error: "duplicateId is required" }, 400);
+        }
+        const data = await callWorkflow(env, AI_TRIAGE_WORKFLOW_ID, {
+          op: "dismiss_duplicate",
+          customerSlug: aiCustomerSlug,
+          ideaId: aiIdeaId,
+          duplicateId,
+        });
+        if (data?.ok === false) return json(data, 404);
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
     const mergeMatch = url.pathname.match(/^\/api\/ideas\/(\d+)\/merge$/);
     if (request.method === "POST" && mergeMatch) {
       let body;
@@ -7876,6 +8043,7 @@ const app = {
           );
           if (data?.idea && !replayed) {
             deliverWebhooks(env, ctx, apiCustomerSlug, "idea.created", data.idea);
+            ctx.waitUntil(aiTriageIdea(env, url.origin, apiCustomerSlug, data.idea.id));
           }
           return json(data);
         } catch (err) {
