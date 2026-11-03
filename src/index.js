@@ -250,6 +250,137 @@ async function ensureLinearRelayTrigger(env, customerSlug) {
   return triggerUrl;
 }
 
+// Mentioning the bot in a customer's Slack files an idea on that customer's
+// board: one Fastn app-event trigger per tenant, listening on that tenant's
+// Slack workspace, routes to the capture workflow.
+// The route must pin an installation of the workflow for the tenant - without
+// it the run executes as our own org and its Slack calls use our workspace.
+// Reconciled from Fastn's own state on a cron and whenever an admin's
+// settings page reads their Slack, so connecting or disconnecting Slack is
+// all a customer ever does.
+const SLACK_CAPTURE_WORKFLOW_ID = "wf_d7d3f8c4f86e";
+const SLACK_CONNECTOR_ID = "8de5d696-5289-4c9c-ade4-de918d019d06";
+const SLACK_WORKSPACE_WORKFLOW_ID = "wf_1efc8818f136";
+
+// Fastn leaves a trigger's account empty when it is created through the API,
+// and an empty account matches no event, so the workspace is looked up here.
+async function slackWorkspaceOf(env, org) {
+  const data = await callWorkflow(env, SLACK_WORKSPACE_WORKFLOW_ID, {}, org.id);
+  if (!data?.ok || !data.teamId) throw new Error(`could not read the Slack workspace: ${data?.error || "no answer"}`);
+  return data.teamId;
+}
+
+async function ensureSlackCaptureInstallation(env, org) {
+  const q = `end_org_id=${encodeURIComponent(org.id)}&target_type=workflow&target_id=${SLACK_CAPTURE_WORKFLOW_ID}`;
+  const listed = await fastnApi(env, "GET", `/api/v1/installations?${q}`);
+  if (listed.status >= 300) throw new Error(`listing installations failed (HTTP ${listed.status})`);
+  const found = (Array.isArray(listed.data) ? listed.data : []).find(
+    (i) => i.targetId === SLACK_CAPTURE_WORKFLOW_ID && i.endOrgId === org.id && i.status !== "archived"
+  );
+  if (found) {
+    if (found.status !== "active") {
+      const r = await fastnApi(env, "PUT", `/api/v1/installations/${found.id}`, { status: "active" });
+      if (r.status >= 300) throw new Error(`activating installation failed (HTTP ${r.status})`);
+    }
+    return found.id;
+  }
+  const created = await fastnApi(env, "POST", "/api/v1/installations", {
+    target_type: "workflow",
+    target_id: SLACK_CAPTURE_WORKFLOW_ID,
+    end_org_id: org.id,
+    label: `RequestHub Slack capture - ${org.slug}`,
+    status: "active",
+    defer_config: true,
+  });
+  if (created.status >= 300 || !created.data?.id) throw new Error(`creating installation failed (HTTP ${created.status})`);
+  return created.data.id;
+}
+
+async function syncSlackCaptureForTenant(env, org, wanted, verifyWorkspace) {
+  const listed = await fastnApi(env, "GET", `/api/v1/app-triggers?end_org_id=${encodeURIComponent(org.id)}&limit=100`);
+  if (listed.status >= 300) throw new Error(`listing triggers failed (HTTP ${listed.status})`);
+  const mine = (Array.isArray(listed.data) ? listed.data : [])
+    .filter((t) => (t.appTrigger?.routes || []).some((r) => r.routeId === SLACK_CAPTURE_WORKFLOW_ID))
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  const remove = async (t) => {
+    const r = await fastnApi(env, "DELETE", `/api/v1/app-triggers/${t.id}`);
+    if (r.status >= 300 && r.status !== 404) throw new Error(`deleting trigger ${t.id} failed (HTTP ${r.status})`);
+  };
+  if (!wanted) {
+    for (const t of mine) await remove(t);
+    return mine.length ? "removed" : "off";
+  }
+  const installationId = await ensureSlackCaptureInstallation(env, org);
+  const routes = [
+    { routeId: SLACK_CAPTURE_WORKFLOW_ID, routeType: "API", headers: { "x-rh-tenant": org.slug }, installationId },
+  ];
+  const [keep, ...duplicates] = mine;
+  for (const t of duplicates) await remove(t);
+  const storedAccount = keep?.appTrigger?.accountId || null;
+  const accountId = !storedAccount || verifyWorkspace ? await slackWorkspaceOf(env, org) : storedAccount;
+  if (!keep) {
+    const r = await fastnApi(env, "POST", "/api/v1/app-triggers", {
+      name: `RequestHub - Slack ideas for ${org.slug}`,
+      endOrgId: org.id,
+      accountId,
+      connectorId: SLACK_CONNECTOR_ID,
+      connectorName: "Slack",
+      events: [{ id: "app_mention", label: "App Mention" }],
+      routes,
+      dlqConfiguration: { maxRetries: 5, backoffStrategy: "exponential" },
+    });
+    if (r.status >= 300) throw new Error(`creating trigger failed (HTTP ${r.status}): ${JSON.stringify(r.data).slice(0, 200)}`);
+    return "created";
+  }
+  const route = (keep.appTrigger?.routes || []).find((x) => x.routeId === SLACK_CAPTURE_WORKFLOW_ID) || {};
+  if (
+    keep.status !== "ACTIVE" ||
+    storedAccount !== accountId ||
+    keep.appTrigger.routes.length !== 1 ||
+    route.installationId !== installationId ||
+    route.headers?.["x-rh-tenant"] !== org.slug
+  ) {
+    const r = await fastnApi(env, "PUT", `/api/v1/app-triggers/${keep.id}`, { routes, status: "ACTIVE", accountId });
+    if (r.status >= 300) throw new Error(`updating trigger failed (HTTP ${r.status})`);
+    return "repaired";
+  }
+  return "on";
+}
+
+// onlySlug narrows the sweep to one board whose admin is signed in, which
+// also proves that slug is a real board without asking the customer list.
+async function syncSlackCaptureTriggers(env, onlySlug) {
+  const [orgsRes, connsRes] = await Promise.all([
+    fastnApi(env, "GET", "/api/v1/orgs?type=end_org"),
+    fastnApi(env, "GET", "/api/v1/connections?scope=customers"),
+  ]);
+  // Never act on a failed read: an empty answer would delete every trigger.
+  if (orgsRes.status >= 300 || !Array.isArray(orgsRes.data)) throw new Error(`listing tenants failed (HTTP ${orgsRes.status})`);
+  if (connsRes.status >= 300 || !Array.isArray(connsRes.data)) throw new Error(`listing connections failed (HTTP ${connsRes.status})`);
+  const withSlack = new Set(
+    connsRes.data.filter((c) => c.connectorId === SLACK_CONNECTOR_ID && c.status === "ACTIVE").map((c) => c.endOrgId)
+  );
+  let orgs = orgsRes.data.filter((o) => o.type === "end_org" && /^[a-z0-9-]+$/.test(o.slug || ""));
+  if (onlySlug) orgs = orgs.filter((o) => o.slug === onlySlug);
+
+  let boards = onlySlug ? new Set([onlySlug]) : null;
+  if (!boards && orgs.some((o) => withSlack.has(o.id))) {
+    const data = await callWorkflow(env, LIST_CUSTOMERS_WORKFLOW_ID, {}).catch(() => null);
+    if (Array.isArray(data?.customers)) boards = new Set(data.customers.map((c) => c.slug));
+  }
+  return Promise.all(
+    orgs.map(async (org) => {
+      const hasSlack = withSlack.has(org.id);
+      if (hasSlack && !boards) return { slug: org.slug, error: "board list unavailable, left unchanged" };
+      try {
+        return { slug: org.slug, slack: hasSlack, capture: await syncSlackCaptureForTenant(env, org, hasSlack && boards.has(org.slug), Boolean(onlySlug)) };
+      } catch (err) {
+        return { slug: org.slug, slack: hasSlack, error: err.message };
+      }
+    })
+  );
+}
+
 async function callWorkflow(env, workflowId, input, endOrgId) {
   const headers = {
     Authorization: `Bearer ${env.FASTN_API_KEY}`,
@@ -1169,7 +1300,8 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
     <form method="POST" action="/api/customers/${encodeURIComponent(customerSlug)}/settings" id="settingsForm">
       <div class="card">
         <h2>Slack</h2>
-        <p class="hint">The channel new submissions get posted to. Pick one from your workspace below, or leave blank to use your workspace's default channel.</p>
+        <p class="hint">The channel new submissions get posted to. Pick one from your workspace below, or leave blank to skip posting.</p>
+        <p class="hint">Ideas can also come from Slack: mention <strong>@fastn</strong> with the idea in any channel the bot is in, for example <code>@fastn idea: export dashboards to PDF</code>. It lands on this board with that person's vote, and the bot replies in the thread with the link. This turns on by itself once Slack is connected.</p>
         <div class="field">
           <select id="slackChannelPicker" disabled><option>Loading your Slack channels...</option></select>
           <p class="select-note" id="slackChannelNote"></p>
@@ -4847,6 +4979,17 @@ const app = {
       return res;
     }
 
+    if (request.method === "POST" && url.pathname === "/api/owner/slack-capture/sync") {
+      if (!(await requireAuth(request, env, OWNER_SLUG))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      try {
+        return json({ ok: true, tenants: await syncSlackCaptureTriggers(env) });
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
     if (request.method === "GET" && url.pathname === "/owner") {
       if (!(await requireAuth(request, env, OWNER_SLUG))) {
         return new Response(null, { status: 302, headers: { Location: "/owner/login" } });
@@ -5432,6 +5575,7 @@ const app = {
       try {
         const input = kind === "linear-states" ? { kind, teamId: url.searchParams.get("teamId") || "" } : { kind };
         const data = await callWorkflow(env, LIST_DESTINATIONS_WORKFLOW_ID, input, endOrgId);
+        if (kind === "slack") ctx.waitUntil(syncSlackCaptureTriggers(env, customerSlug).catch(() => {}));
         return json(data);
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
@@ -6324,5 +6468,14 @@ export default {
     const slugs = await writeTenants(request, reqBody, res);
     await Promise.all([...slugs].flatMap((s) => boardCacheKeys(url.origin, s).map((k) => caches.default.delete(k))));
     return res;
+  },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(
+      syncSlackCaptureTriggers(env).then((tenants) => {
+        const problems = tenants.filter((t) => t.error);
+        if (problems.length) console.error("slack capture sync", JSON.stringify(problems));
+      })
+    );
   },
 };
