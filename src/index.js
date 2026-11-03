@@ -347,9 +347,11 @@ async function syncSlackCaptureForTenant(env, org, wanted, verifyWorkspace) {
   return "on";
 }
 
-// onlySlug narrows the sweep to one board whose admin is signed in, which
+// scope.slug narrows the sweep to one board whose admin is signed in, which
 // also proves that slug is a real board without asking the customer list.
-async function syncSlackCaptureTriggers(env, onlySlug) {
+// scope.endOrgId narrows it to the tenant a Fastn connection event named.
+async function syncSlackCaptureTriggers(env, scope = {}) {
+  const onlySlug = scope.slug || "";
   const [orgsRes, connsRes] = await Promise.all([
     fastnApi(env, "GET", "/api/v1/orgs?type=end_org"),
     fastnApi(env, "GET", "/api/v1/connections?scope=customers"),
@@ -362,6 +364,7 @@ async function syncSlackCaptureTriggers(env, onlySlug) {
   );
   let orgs = orgsRes.data.filter((o) => o.type === "end_org" && /^[a-z0-9-]+$/.test(o.slug || ""));
   if (onlySlug) orgs = orgs.filter((o) => o.slug === onlySlug);
+  if (scope.endOrgId) orgs = orgs.filter((o) => o.id === scope.endOrgId);
 
   let boards = onlySlug ? new Set([onlySlug]) : null;
   if (!boards && orgs.some((o) => withSlack.has(o.id))) {
@@ -373,7 +376,7 @@ async function syncSlackCaptureTriggers(env, onlySlug) {
       const hasSlack = withSlack.has(org.id);
       if (hasSlack && !boards) return { slug: org.slug, error: "board list unavailable, left unchanged" };
       try {
-        return { slug: org.slug, slack: hasSlack, capture: await syncSlackCaptureForTenant(env, org, hasSlack && boards.has(org.slug), Boolean(onlySlug)) };
+        return { slug: org.slug, slack: hasSlack, capture: await syncSlackCaptureForTenant(env, org, hasSlack && boards.has(org.slug), Boolean(onlySlug || scope.endOrgId)) };
       } catch (err) {
         return { slug: org.slug, slack: hasSlack, error: err.message };
       }
@@ -381,7 +384,30 @@ async function syncSlackCaptureTriggers(env, onlySlug) {
   );
 }
 
-async function callWorkflow(env, workflowId, input, endOrgId) {
+// Fastn tells us about connection changes (connected, revoked, expired) on a
+// signed event subscription. Signature: "sha256=" + HMAC(secret, "<ts>.<raw body>"),
+// with ts in Unix seconds and re-signed on every delivery attempt.
+async function verifyFastnEvent(env, request, rawBody) {
+  const secret = env.FASTN_EVENTS_SECRET;
+  const ts = request.headers.get("x-fastn-timestamp") || "";
+  const sig = request.headers.get("x-fastn-signature") || "";
+  if (!secret || !/^\d+$/.test(ts) || !sig.startsWith("sha256=")) return false;
+  if (Math.abs(Date.now() / 1000 - Number(ts)) > 300) return false;
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const expected = "sha256=" + toHex(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${ts}.${rawBody}`)));
+  if (expected.length !== sig.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
+  return diff === 0;
+}
+
+// With an idempotency key, a repeat of the same request (double click, network
+// retry, a partner's retry) is answered by Fastn from the first run instead of
+// running again. "replay: output" makes the repeat return the original
+// workflow output and flag itself, so callers can skip side effects such as
+// outbound webhooks. A repeat that arrives while the first run is still going
+// gets 202; it waits briefly for that run's answer.
+async function runWorkflow(env, workflowId, input, endOrgId, idempotencyKey) {
   const headers = {
     Authorization: `Bearer ${env.FASTN_API_KEY}`,
     "X-fastn-Test-Mode": "true",
@@ -393,17 +419,39 @@ async function callWorkflow(env, workflowId, input, endOrgId) {
   // connection instead of the tenant's - meaning every customer's status changes
   // would silently use OUR Slack/Linear/Notion regardless of what they connected.
   if (endOrgId) headers["x-end-org-id"] = endOrgId;
-
-  const res = await fetch(`${FASTN_BASE}/api/v1/workflows/${workflowId}/execute`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ input }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(body?.error || `Fastn call failed: ${res.status}`);
+  if (idempotencyKey) {
+    headers["Idempotency-Key"] = idempotencyKey;
+    headers["x-fastn-idempotency-replay"] = "output";
   }
-  return body?.data ?? body;
+
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`${FASTN_BASE}/api/v1/workflows/${workflowId}/execute`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ input }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 202 && idempotencyKey && attempt < 10) {
+      await new Promise((r) => setTimeout(r, 500));
+      continue;
+    }
+    if (!res.ok) {
+      const msg = body?.error?.message || body?.error || `Fastn call failed: ${res.status}`;
+      throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+    }
+    return { data: body?.data ?? body, replayed: res.headers.get("x-idempotent-replay") === "true" };
+  }
+}
+
+async function callWorkflow(env, workflowId, input, endOrgId) {
+  return (await runWorkflow(env, workflowId, input, endOrgId)).data;
+}
+
+// Keys come from browsers and partners, so they are namespaced per action and
+// board, and limited to a safe shape before reaching Fastn.
+function scopedIdempotencyKey(raw, scope) {
+  if (typeof raw !== "string" || !/^[A-Za-z0-9_-]{8,100}$/.test(raw)) return null;
+  return `rh:${scope}:${raw}`;
 }
 
 async function signWebhookPayload(secret, rawBody) {
@@ -2599,6 +2647,7 @@ function boardPage(customerSlug, isOwner) {
       });
 
       list.querySelectorAll('.comment-form').forEach(function (form) {
+        form.addEventListener('input', function () { delete form.dataset.key; });
         form.addEventListener('submit', function (e) {
           e.preventDefault();
           const ideaId = form.getAttribute('data-idea-id');
@@ -2611,6 +2660,7 @@ function boardPage(customerSlug, isOwner) {
           if (postBtn.disabled) return;
           postBtn.disabled = true;
           postBtn.textContent = 'Posting...';
+          form.dataset.key = form.dataset.key || rhNewKey();
           fetch('/api/ideas/' + ideaId + '/comments', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -2618,11 +2668,13 @@ function boardPage(customerSlug, isOwner) {
               authorName: nameInput.value.trim() || 'Anonymous',
               authorEmail: emailInput.value.trim(),
               body,
+              idempotencyKey: form.dataset.key,
             }),
           })
             .then(function (r) { return r.json(); })
             .then(function (d) {
               if (!d || d.ok === false) throw new Error((d && d.error) || 'failed');
+              delete form.dataset.key;
               bodyInput.value = '';
               const idea = allIdeas.find(function (x) { return x.id === Number(ideaId); });
               if (idea) {
@@ -2919,6 +2971,13 @@ function boardPage(customerSlug, isOwner) {
       }
     });
 
+    // Same key on a resend, a new one once the text changes or it went through.
+    function rhNewKey() {
+      const raw = window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+      return raw.replace(/[^A-Za-z0-9_-]/g, '');
+    }
+    let boardSubmitKey = null;
+    document.getElementById('submit-form').addEventListener('input', function () { boardSubmitKey = null; });
     document.getElementById('submit-form').addEventListener('submit', function (e) {
       e.preventDefault();
       const title = document.getElementById('title').value.trim();
@@ -2928,15 +2987,19 @@ function boardPage(customerSlug, isOwner) {
       const tags = document.getElementById('tags').value.split(',').map(function (t) { return t.trim(); }).filter(Boolean);
       if (!title) return;
       const submitBtn = document.getElementById('submitFormBtn');
+      if (submitBtn.disabled) return;
       submitBtn.disabled = true;
       submitBtn.textContent = 'Submitting...';
+      boardSubmitKey = boardSubmitKey || rhNewKey();
       fetch('/api/ideas', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': boardSubmitKey },
         body: JSON.stringify({ customerSlug, title, description, category, submitterEmail, tags }),
       })
         .then(function (r) { return r.json(); })
-        .then(function () {
+        .then(function (d) {
+          if (!d || d.ok === false || !d.idea) throw new Error((d && d.error) || 'not saved');
+          boardSubmitKey = null;
           document.getElementById('title').value = '';
           document.getElementById('description').value = '';
           document.getElementById('submitterEmail').value = '';
@@ -4683,6 +4746,8 @@ function widgetPage(customerSlug, color, theme) {
       font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
     }
     .btn-submit:hover { filter: brightness(0.9); }
+    .btn-submit:disabled { opacity: .6; cursor: default; filter: none; }
+    .form-error { color: #dc2626; font-size: 12px; margin: 0 0 8px; }
     .success { text-align: center; padding: 20px 0; }
     .success .check { font-size: 32px; margin-bottom: 8px; }
     .panel-footer { padding: 10px 16px; border-top: 1px solid var(--w-border); text-align: center; }
@@ -4705,7 +4770,8 @@ function widgetPage(customerSlug, color, theme) {
         <div class="field"><input id="title" required maxlength="200" placeholder="What's on your mind?" aria-label="What's on your mind?" /></div>
         <div class="field"><textarea id="description" maxlength="2000" placeholder="More detail (optional)" aria-label="More detail (optional)"></textarea></div>
         <div class="field"><input id="email" type="email" placeholder="Your email (optional)" aria-label="Your email (optional)" /></div>
-        <button type="submit" class="btn-submit">Send feedback</button>
+        <p class="form-error" id="formError" role="alert" hidden></p>
+        <button type="submit" class="btn-submit" id="sendBtn">Send feedback</button>
       </form>
     </div>
     <div class="panel-footer"><a href="/b/${encodeURIComponent(customerSlug)}" target="_blank" rel="noopener">View full feedback board &#8599;</a></div>
@@ -4748,21 +4814,45 @@ function widgetPage(customerSlug, color, theme) {
       post('close');
     });
 
-    document.getElementById('form').addEventListener('submit', function (e) {
+    // One key per piece of feedback: resending after a dropped connection (or
+    // a double click) reuses it, so the board gets the idea once. Editing the
+    // text makes it a new submission with a new key.
+    function newKey() {
+      var raw = window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+      return raw.replace(/[^A-Za-z0-9_-]/g, '');
+    }
+    var submitKey = null;
+    var feedbackForm = document.getElementById('form');
+    feedbackForm.addEventListener('input', function () { submitKey = null; });
+    feedbackForm.addEventListener('submit', function (e) {
       e.preventDefault();
       var title = document.getElementById('title').value.trim();
       if (!title) return;
+      var btn = document.getElementById('sendBtn');
+      var errEl = document.getElementById('formError');
+      if (btn.disabled) return;
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+      errEl.hidden = true;
+      submitKey = submitKey || newKey();
       var description = document.getElementById('description').value.trim();
       var submitterEmail = document.getElementById('email').value.trim();
       fetch('/api/ideas', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': submitKey },
         body: JSON.stringify({ customerSlug: customerSlug, title: title, description: description, category: 'Feedback', submitterEmail: submitterEmail }),
       })
         .then(function (r) { return r.json(); })
-        .then(function () {
+        .then(function (d) {
+          if (!d || d.ok === false || !d.idea) throw new Error((d && d.error) || 'not saved');
           document.getElementById('panelBody').innerHTML =
             '<div class="success"><div class="check">&#10003;</div><div>Thanks! We got it.</div></div>';
+        })
+        .catch(function () {
+          btn.disabled = false;
+          btn.textContent = 'Send feedback';
+          errEl.textContent = "Couldn't send that - check your connection and try again.";
+          errEl.hidden = false;
         });
     });
   </script>
@@ -5383,6 +5473,26 @@ const app = {
       return res;
     }
 
+    if (request.method === "POST" && url.pathname === "/api/fastn/events") {
+      const rawBody = await request.text();
+      if (!(await verifyFastnEvent(env, request, rawBody))) {
+        return json({ ok: false, error: "invalid signature" }, 401);
+      }
+      let event;
+      try {
+        event = JSON.parse(rawBody);
+      } catch {
+        return json({ ok: false, error: "invalid JSON body" }, 400);
+      }
+      const isConnection = typeof event.type === "string" && event.type.startsWith("connection.");
+      const isSlack = !event.app || event.app === "slack" || event.app === SLACK_CONNECTOR_ID;
+      if (isConnection && isSlack && event.endOrgId) {
+        ctx.waitUntil(syncSlackCaptureTriggers(env, { endOrgId: event.endOrgId }).catch(() => {}));
+        return json({ ok: true, action: "slack-capture-sync" });
+      }
+      return json({ ok: true, action: "ignored" });
+    }
+
     if (request.method === "POST" && url.pathname === "/api/owner/slack-capture/sync") {
       if (!(await requireAuth(request, env, OWNER_SLUG))) {
         return json({ ok: false, error: "unauthorized" }, 401);
@@ -5987,7 +6097,7 @@ const app = {
       try {
         const input = kind === "linear-states" ? { kind, teamId: url.searchParams.get("teamId") || "" } : { kind };
         const data = await callWorkflow(env, LIST_DESTINATIONS_WORKFLOW_ID, input, endOrgId);
-        if (kind === "slack") ctx.waitUntil(syncSlackCaptureTriggers(env, customerSlug).catch(() => {}));
+        if (kind === "slack") ctx.waitUntil(syncSlackCaptureTriggers(env, { slug: customerSlug }).catch(() => {}));
         return json(data);
       } catch (err) {
         return json({ ok: false, error: err.message }, 502);
@@ -6320,7 +6430,7 @@ const app = {
           const settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug: submitCustomerSlug });
           slackChannel = settings?.slackChannel || undefined;
         } catch {}
-        const data = await callWorkflow(
+        const { data, replayed } = await runWorkflow(
           env,
           SUBMIT_WORKFLOW_ID,
           {
@@ -6332,9 +6442,10 @@ const app = {
             tags: Array.isArray(body.tags) ? body.tags : [],
             ...(slackChannel ? { slackChannel } : {}),
           },
-          endOrgId
+          endOrgId,
+          scopedIdempotencyKey(request.headers.get("idempotency-key") || body.idempotencyKey, `idea:${submitCustomerSlug}`)
         );
-        if (data?.idea) {
+        if (data?.idea && !replayed) {
           deliverWebhooks(env, ctx, submitCustomerSlug, "idea.created", data.idea);
         }
         return json(data);
@@ -6430,17 +6541,23 @@ const app = {
       const commentCustomerSlug = (body.customerSlug || "").trim();
       const isTeam = commentCustomerSlug ? await requireAuth(request, env, commentCustomerSlug) : false;
       try {
-        const data = await callWorkflow(env, ADD_COMMENT_WORKFLOW_ID, {
-          ideaId: Number(commentsMatch[1]),
-          authorName: body.authorName || "Anonymous",
-          authorEmail: body.authorEmail || "",
-          body: body.body,
-          isTeam,
-          internal: isTeam && Boolean(body.internal),
-          ideaUrl: isTeam ? `${url.origin}/b/${encodeURIComponent(commentCustomerSlug)}/ideas/${commentsMatch[1]}` : "",
-          baseUrl: isTeam ? url.origin : "",
-        });
-        if (data?.ok && data.comment && !data.comment.internal && data.customerSlug) {
+        const { data, replayed } = await runWorkflow(
+          env,
+          ADD_COMMENT_WORKFLOW_ID,
+          {
+            ideaId: Number(commentsMatch[1]),
+            authorName: body.authorName || "Anonymous",
+            authorEmail: body.authorEmail || "",
+            body: body.body,
+            isTeam,
+            internal: isTeam && Boolean(body.internal),
+            ideaUrl: isTeam ? `${url.origin}/b/${encodeURIComponent(commentCustomerSlug)}/ideas/${commentsMatch[1]}` : "",
+            baseUrl: isTeam ? url.origin : "",
+          },
+          undefined,
+          scopedIdempotencyKey(body.idempotencyKey, `comment:${commentsMatch[1]}`)
+        );
+        if (!replayed && data?.ok && data.comment && !data.comment.internal && data.customerSlug) {
           deliverWebhooks(env, ctx, data.customerSlug, "comment.created", {
             ...data.comment,
             idea_id: Number(commentsMatch[1]),
@@ -6743,7 +6860,7 @@ const app = {
             const settings = await callWorkflow(env, GET_CUSTOMER_SETTINGS_WORKFLOW_ID, { customerSlug: apiCustomerSlug });
             slackChannel = settings?.slackChannel || undefined;
           } catch {}
-          const data = await callWorkflow(
+          const { data, replayed } = await runWorkflow(
             env,
             SUBMIT_WORKFLOW_ID,
             {
@@ -6755,9 +6872,10 @@ const app = {
               tags: Array.isArray(body.tags) ? body.tags : [],
               ...(slackChannel ? { slackChannel } : {}),
             },
-            endOrgId
+            endOrgId,
+            scopedIdempotencyKey(request.headers.get("idempotency-key"), `api-idea:${apiCustomerSlug}`)
           );
-          if (data?.idea) {
+          if (data?.idea && !replayed) {
             deliverWebhooks(env, ctx, apiCustomerSlug, "idea.created", data.idea);
           }
           return json(data);
