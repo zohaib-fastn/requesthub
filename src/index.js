@@ -727,10 +727,31 @@ async function createInstallationForTenant(env, widgetId, endOrgId, label) {
     body: JSON.stringify({ target_type: "widget", target_id: widgetId, widget_id: widgetId, end_org_id: endOrgId, label }),
   });
   const body = await res.json().catch(() => ({}));
+  if (res.status === 409) return null;
   if (!res.ok) {
-    throw new Error(body?.error || `installation creation failed: ${res.status}`);
+    throw new Error(body?.error?.message || body?.error || `installation creation failed: ${res.status}`);
   }
   return body?.data;
+}
+
+// Gives a board its own Fastn tenant with a connect installation per tool.
+// Signup does this up front; boards that predate it (or whose signup failed
+// half-way) get it the first time their admin opens Connect, so no board is
+// ever stuck without connectable tools.
+async function provisionFastnTenant(env, slug, name) {
+  let org;
+  try {
+    org = await createOrg(env, name, slug);
+  } catch (err) {
+    const r = await fastnApi(env, "GET", "/api/v1/orgs?type=end_org");
+    org = Array.isArray(r.data) ? r.data.find((o) => o.slug === slug) : null;
+    if (!org) throw err;
+  }
+  await Promise.all(
+    CONNECT_WIDGETS.map((w) => createInstallationForTenant(env, w.widgetId, org.id, `${slug} - Connect ${w.name}`))
+  );
+  await callWorkflow(env, SET_CUSTOMER_ORG_WORKFLOW_ID, { customerSlug: slug, orgId: org.id, name });
+  return org.id;
 }
 
 async function getTenantOrgId(env, customerSlug) {
@@ -5076,13 +5097,7 @@ const app = {
         return json({ ok: false, error: `"${slug}" is already taken - try a different name` }, 409);
       }
       try {
-        const org = await createOrg(env, name, slug);
-        await Promise.all(
-          CONNECT_WIDGETS.map((w) =>
-            createInstallationForTenant(env, w.widgetId, org.id, `${slug} - Connect ${w.name}`)
-          )
-        );
-        await callWorkflow(env, SET_CUSTOMER_ORG_WORKFLOW_ID, { customerSlug: slug, orgId: org.id, name });
+        await provisionFastnTenant(env, slug, name);
         const { hash, salt } = await hashPassword(signupPassword);
         await callWorkflow(env, SET_CUSTOMER_PASSWORD_WORKFLOW_ID, { customerSlug: slug, hash, salt });
         const res = json({ ok: true, slug });
@@ -5442,9 +5457,13 @@ const app = {
           headers: { Location: `/b/${encodeURIComponent(customerSlug)}/login` },
         });
       }
-      const endOrgId = await getTenantOrgId(env, customerSlug);
+      let endOrgId = await getTenantOrgId(env, customerSlug);
       if (!endOrgId) {
-        return html(connectUnavailablePage(customerSlug, isOwner));
+        try {
+          endOrgId = await provisionFastnTenant(env, customerSlug, customerSlug);
+        } catch {
+          return html(connectUnavailablePage(customerSlug, isOwner));
+        }
       }
       try {
         const token = await mintEmbedToken(env, endOrgId, customerSlug);
