@@ -480,7 +480,7 @@ async function verifyFastnEvent(env, request, rawBody) {
 // workflow output and flag itself, so callers can skip side effects such as
 // outbound webhooks. A repeat that arrives while the first run is still going
 // gets 202; it waits briefly for that run's answer.
-async function runWorkflow(env, workflowId, input, endOrgId, idempotencyKey) {
+async function runWorkflow(env, workflowId, input, endOrgId, idempotencyKey, extraHeaders = {}) {
   const headers = {
     Authorization: `Bearer ${env.FASTN_API_KEY}`,
     "X-fastn-Test-Mode": "true",
@@ -492,6 +492,7 @@ async function runWorkflow(env, workflowId, input, endOrgId, idempotencyKey) {
   // connection instead of the tenant's - meaning every customer's status changes
   // would silently use OUR Slack/Linear/Notion regardless of what they connected.
   if (endOrgId) headers["x-end-org-id"] = endOrgId;
+  Object.assign(headers, extraHeaders);
   if (idempotencyKey) {
     headers["Idempotency-Key"] = idempotencyKey;
     headers["x-fastn-idempotency-replay"] = "output";
@@ -854,8 +855,8 @@ function exampleAppPage(customerSlug, origin) {
 </html>`;
 }
 
-async function callWorkflow(env, workflowId, input, endOrgId) {
-  return (await runWorkflow(env, workflowId, input, endOrgId)).data;
+async function callWorkflow(env, workflowId, input, endOrgId, extraHeaders) {
+  return (await runWorkflow(env, workflowId, input, endOrgId, undefined, extraHeaders)).data;
 }
 
 // Keys come from browsers and partners, so they are namespaced per action and
@@ -1302,13 +1303,23 @@ async function ensureConnectInstallations(env, endOrgId, slug) {
   );
 }
 
+// A customer who connects GitHub twice has two connections, and Fastn will not
+// choose between them (CONNECTION_AMBIGUOUS), so GitHub calls go through the
+// board's hub installation, which names the connection they set up.
+async function callGithubWorkflow(env, input, endOrgId) {
+  const widgetId = CONNECT_WIDGETS.find((w) => w.slug === "github").widgetId;
+  const listed = await fastnApi(env, "GET", `/api/v1/installations?end_org_id=${encodeURIComponent(endOrgId)}&widget_id=${widgetId}`);
+  const installation = (Array.isArray(listed.data) ? listed.data : []).find((i) => i.status === "active" && i.connections?.github);
+  return callWorkflow(env, GITHUB_RELEASES_WORKFLOW_ID, input, endOrgId, installation ? { "x-installation-id": installation.id } : {});
+}
+
 // Records new releases of the repos a board follows (read with the board's own
 // GitHub connection) and ships every idea linked in their notes, through the
 // same status path as triage so Slack, Linear, Notion and emails follow.
 async function syncGithubForBoard(env, ctx, customerSlug, origin, endOrgId = null) {
   endOrgId = endOrgId || (await getTenantOrgId(env, customerSlug));
   if (!endOrgId) return { ok: false, error: "no connected workspace for this customer yet" };
-  const data = await callWorkflow(env, GITHUB_RELEASES_WORKFLOW_ID, { op: "sync", customerSlug }, endOrgId);
+  const data = await callGithubWorkflow(env, { op: "sync", customerSlug }, endOrgId);
   if (!data?.ok) return { ok: false, error: data?.error || "GitHub check failed" };
   const shipped = [];
   if ((data.ideasToShip || []).length) {
@@ -6784,11 +6795,11 @@ const app = {
             body = await request.json();
           } catch {}
           const repos = Array.isArray(body.repos) ? body.repos : [];
-          const data = await callWorkflow(env, GITHUB_RELEASES_WORKFLOW_ID, { op: "set_repos", customerSlug, repos }, endOrgId);
+          const data = await callGithubWorkflow(env, { op: "set_repos", customerSlug, repos }, endOrgId);
           return json(data, data?.ok ? 200 : 400);
         }
         const [available, recorded] = await Promise.allSettled([
-          callWorkflow(env, GITHUB_RELEASES_WORKFLOW_ID, { op: "available", customerSlug }, endOrgId),
+          callGithubWorkflow(env, { op: "available", customerSlug }, endOrgId),
           callWorkflow(env, GITHUB_RELEASES_WORKFLOW_ID, { op: "releases", customerSlug }),
         ]);
         const a = available.status === "fulfilled" ? available.value : null;
