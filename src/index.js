@@ -2199,6 +2199,65 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
         : `<p class="hint">Connect a Linear team above and save, then come back here to turn on real-time sync.</p>`}
     </div>
 
+    <div class="card" id="claudeCard" data-testid="claude-card">
+      <h2>Use RequestHub from Claude</h2>
+      <p class="hint">Ask Claude about your board and act on it in plain English: "what are our most-voted open ideas?", "mark #42 as planned", "post the top three to Slack". Claude connects through Fastn as <b>${escapeHtml(customerSlug)}</b>, with this board's own tools, and nothing else.</p>
+      <ol class="hint" style="margin:0 0 10px;padding-left:18px;">
+        <li>Press <b>Create connect link</b>. The link works once and expires in 10 minutes.</li>
+        <li>In Claude, open <b>Settings &rarr; Connectors &rarr; Add custom connector</b> and paste the link.</li>
+        <li>Start a chat and ask away.</li>
+      </ol>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <button type="button" class="btn-copy" id="claudeCreate" data-testid="claude-create">Create connect link</button>
+        <span class="hint" id="claudeNote" role="status" style="margin:0;"></span>
+      </div>
+      <div id="claudeResult" data-testid="claude-result" hidden style="margin-top:10px;">
+        <div class="embed-code"><code id="claudeUrl" style="user-select:all;"></code><button type="button" class="btn-copy" id="claudeCopy">Copy</button></div>
+        <p class="hint" id="claudeExpiry" style="margin:6px 0 0;"></p>
+      </div>
+    </div>
+    <script>
+      (function () {
+        var slug = ${JSON.stringify(customerSlug).replace(/</g, "\\u003c")};
+        var btn = document.getElementById('claudeCreate');
+        var note = document.getElementById('claudeNote');
+        var box = document.getElementById('claudeResult');
+        var urlEl = document.getElementById('claudeUrl');
+        var expiry = document.getElementById('claudeExpiry');
+        var copy = document.getElementById('claudeCopy');
+        var timer = null;
+        function tick(expiresAt) {
+          var left = Math.max(0, Math.round((new Date(expiresAt).getTime() - Date.now()) / 1000));
+          expiry.textContent = left ? 'Works once. Expires in ' + Math.floor(left / 60) + ':' + ('0' + (left % 60)).slice(-2) + '.' : 'This link has expired - create a new one.';
+          if (!left && timer) { clearInterval(timer); timer = null; }
+        }
+        btn.addEventListener('click', function () {
+          btn.disabled = true;
+          note.textContent = 'Creating...';
+          note.style.color = '';
+          fetch('/api/customers/' + encodeURIComponent(slug) + '/claude-url', { method: 'POST' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (!d || !d.ok || !d.url) throw new Error((d && d.error) || 'could not create the link');
+              urlEl.textContent = d.url;
+              box.hidden = false;
+              note.textContent = '';
+              if (timer) clearInterval(timer);
+              tick(d.expiresAt);
+              timer = setInterval(function () { tick(d.expiresAt); }, 1000);
+            })
+            .catch(function (e) { note.textContent = e.message; note.style.color = 'var(--bad)'; })
+            .then(function () { btn.disabled = false; });
+        });
+        copy.addEventListener('click', function () {
+          navigator.clipboard.writeText(urlEl.textContent).then(function () {
+            copy.textContent = 'Copied';
+            setTimeout(function () { copy.textContent = 'Copy'; }, 1500);
+          });
+        });
+      })();
+    </script>
+
     <div class="card" id="githubCard" data-testid="github-card">
       <h2>GitHub releases</h2>
       <p class="hint">Follow up to 5 of your public repositories. Each new GitHub release appears on your <a href="/b/${encodeURIComponent(customerSlug)}/changelog" target="_blank" rel="noopener">public changelog</a>, and any idea whose link is in the release notes (for example <code>${escapeHtml(baseUrl)}/b/${escapeHtml(customerSlug)}/ideas/42</code>) is marked Shipped - announced in Slack, closed in Linear and emailed to its voters. Checked every 15 minutes, or press Check now.</p>
@@ -6775,6 +6834,23 @@ const app = {
           )
         );
       }
+    }
+
+    const claudeUrlMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/claude-url$/);
+    if (request.method === "POST" && claudeUrlMatch) {
+      const customerSlug = claudeUrlMatch[1];
+      if (!(await requireAuth(request, env, customerSlug))) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+      const endOrgId = await getTenantOrgId(env, customerSlug);
+      if (!endOrgId) return json({ ok: false, error: "no connected workspace for this customer yet" }, 404);
+      // A one-time Claude connect code for this board's tenant: whatever Claude
+      // does with it runs as the board, with the board's own connections.
+      const r = await fastnApi(env, "POST", "/api/v1/embed/mcp-connect-codes", { endOrgId });
+      if (r.status >= 300 || !r.data?.url) {
+        return json({ ok: false, error: r.data?.error || `Fastn could not create the link (HTTP ${r.status})` }, 502);
+      }
+      return json({ ok: true, url: r.data.url, expiresAt: r.data.expiresAt });
     }
 
     const githubMatch = url.pathname.match(/^\/api\/customers\/([a-z0-9-]+)\/github(\/repos|\/sync)?$/);

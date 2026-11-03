@@ -436,6 +436,10 @@ async function run() {
     const r = await fetch(BASE_URL + "/b/" + CUSTOMER + "/connect/jira", { redirect: "manual" });
     assert(r.status === 404, "status " + r.status);
   });
+  await check("creating a Claude connect link requires auth", async () => {
+    const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/claude-url", { method: "POST" });
+    assert(r.status === 401, "status " + r.status);
+  });
   await check("GitHub releases status requires auth", async () => {
     const r = await fetch(BASE_URL + "/api/customers/" + CUSTOMER + "/github");
     assert(r.status === 401, "status " + r.status);
