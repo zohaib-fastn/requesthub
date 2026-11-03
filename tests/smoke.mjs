@@ -344,7 +344,7 @@ async function run() {
     });
     assert(r.status === 403, "status " + r.status + " - first-come password claim must be refused");
   });
-  await check("a passwordless board's admin page offers signup, not a password form", async () => {
+  await check("a passwordless board's admin page offers no password form, and a way to start a board", async () => {
     const r = await fetch(BASE_URL + "/b/" + CUSTOMER + "/login");
     const text = await r.text();
     assert(r.status === 200, "status " + r.status);

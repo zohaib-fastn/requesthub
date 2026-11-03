@@ -551,35 +551,43 @@ async function hmacKey(env) {
   );
 }
 
-async function createSessionToken(env, customerSlug, email) {
-  const payload = { slug: customerSlug, exp: Date.now() + SESSION_TTL_MS };
-  if (email) payload.email = email;
+async function signPayload(env, payload) {
   const payloadBytes = new TextEncoder().encode(JSON.stringify(payload));
   const key = await hmacKey(env);
   const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, payloadBytes));
   return `${base64UrlEncode(payloadBytes)}.${base64UrlEncode(sig)}`;
 }
 
-async function verifySessionToken(env, token, customerSlug) {
-  if (!token) return false;
+async function readSignedPayload(env, token) {
+  if (!token) return null;
   const parts = token.split(".");
-  if (parts.length !== 2) return false;
+  if (parts.length !== 2) return null;
   try {
     const payloadBytes = base64UrlDecode(parts[0]);
     const sigBytes = base64UrlDecode(parts[1]);
     const key = await hmacKey(env);
     const expectedSig = new Uint8Array(await crypto.subtle.sign("HMAC", key, payloadBytes));
-    if (expectedSig.length !== sigBytes.length) return false;
+    if (expectedSig.length !== sigBytes.length) return null;
     let diff = 0;
     for (let i = 0; i < expectedSig.length; i++) diff |= expectedSig[i] ^ sigBytes[i];
-    if (diff !== 0) return false;
+    if (diff !== 0) return null;
     const payload = JSON.parse(new TextDecoder().decode(payloadBytes));
-    if (payload.slug !== customerSlug) return false;
-    if (!payload.exp || Date.now() > payload.exp) return false;
-    return true;
+    if (!payload.exp || Date.now() > payload.exp) return null;
+    return payload;
   } catch {
-    return false;
+    return null;
   }
+}
+
+async function createSessionToken(env, customerSlug, email) {
+  const payload = { slug: customerSlug, exp: Date.now() + SESSION_TTL_MS };
+  if (email) payload.email = email;
+  return signPayload(env, payload);
+}
+
+async function verifySessionToken(env, token, customerSlug) {
+  const payload = await readSignedPayload(env, token);
+  return Boolean(payload && payload.slug === customerSlug);
 }
 
 async function verifyLinearWebhookSignature(secret, rawBody, signatureHeader) {
@@ -623,6 +631,68 @@ function getOrCreateVoterKey(request) {
 async function requireAuth(request, env, customerSlug) {
   const token = getCookie(request, sessionCookieName(customerSlug));
   return verifySessionToken(env, token, customerSlug);
+}
+
+// Personal sign-in. A person signs in with Google once; their account lists
+// the boards they belong to (boards they created, boards whose admin password
+// they proved once, and boards that invited their email). Each of those
+// boards gets its ordinary board session cookie, so every existing admin
+// route keeps checking exactly what it always did.
+const ACCOUNTS_WORKFLOW_ID = "wf_3b5a3bbc3ab5";
+const GOOGLE_CLIENT_ID = "258357816101-lu78232udga1qpv2nq74s0d0md8o74ic.apps.googleusercontent.com";
+const ACCOUNT_COOKIE = "rh_account";
+const GOOGLE_STATE_COOKIE = "rh_google";
+
+function googleSignInEnabled(env) {
+  return Boolean(env.GOOGLE_CLIENT_SECRET);
+}
+
+function sessionCookie(name, value, maxAgeSeconds, path = "/") {
+  return `${name}=${value}; Path=${path}; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAgeSeconds}`;
+}
+
+async function currentAccount(request, env) {
+  const payload = await readSignedPayload(env, getCookie(request, ACCOUNT_COOKIE));
+  return payload?.kind === "account" ? payload : null;
+}
+
+async function accountsCall(env, input) {
+  const data = await callWorkflow(env, ACCOUNTS_WORKFLOW_ID, input);
+  if (!data?.ok) throw new Error(data?.error || "accounts are unavailable right now");
+  return data;
+}
+
+async function boardSessionCookies(env, email, boards) {
+  const ttl = Math.floor(SESSION_TTL_MS / 1000);
+  return Promise.all(
+    (boards || []).map(async (b) => sessionCookie(sessionCookieName(b.slug), await createSessionToken(env, b.slug, email), ttl))
+  );
+}
+
+// Only same-site paths, so a crafted ?next= can't bounce a fresh session elsewhere.
+function safeNextPath(next) {
+  return typeof next === "string" && /^\/(?![\/\\])/.test(next) ? next : "";
+}
+
+function redirectWith(location, cookies = []) {
+  const res = new Response(null, { status: 302, headers: { Location: location } });
+  for (const c of cookies) res.headers.append("Set-Cookie", c);
+  return res;
+}
+
+const GOOGLE_G_SVG =
+  '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
+
+const GOOGLE_BUTTON_CSS = `
+    .btn-google { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: var(--radius-btn); border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 14px; font-weight: 600; text-decoration: none; font-family: inherit; }
+    .btn-google:hover { background: var(--surface-3); }
+    .btn-google svg { width: 18px; height: 18px; flex: none; }
+    .divider { display: flex; align-items: center; gap: 10px; margin: 18px 0; color: var(--text-faint); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+    .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }`;
+
+function googleButton(next, label = "Continue with Google") {
+  const href = `/auth/google${next ? `?next=${encodeURIComponent(next)}` : ""}`;
+  return `<a class="btn-google" href="${escapeHtml(href)}">${GOOGLE_G_SVG}<span>${escapeHtml(label)}</span></a>`;
 }
 
 async function sha256Hex(text) {
@@ -917,7 +987,7 @@ function homePage() {
 </html>`;
 }
 
-function loginLookupPage(errorMsg) {
+function loginLookupPage(errorMsg, googleOn) {
   return `<!doctype html>
 <html>
 <head>
@@ -939,15 +1009,23 @@ function loginLookupPage(errorMsg) {
     .error { color: var(--bad); font-size: 12.5px; margin: -4px 0 12px; }
     .back { display: block; text-align: center; margin-top: 16px; color: var(--text-muted); font-size: 12.5px; text-decoration: none; }
     .back:hover { color: var(--text); }
+    ${GOOGLE_BUTTON_CSS}
   </style>
 </head>
 <body>
   <div class="card">
     <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode" style="position:fixed;top:16px;right:16px;"></button>
     <div class="logo-mark">R</div>
-    <h1>Log in to your board</h1>
-    <p>Enter your board's name to go to its admin login.</p>
+    <h1>Log in to RequestHub</h1>
     ${errorMsg ? `<div class="error">${escapeHtml(errorMsg)}</div>` : ""}
+    ${
+      googleOn
+        ? `<p>Sign in to see every board you manage.</p>
+    ${googleButton("")}
+    <div class="divider">or use a board password</div>`
+        : ""
+    }
+    <p>Enter your board's name to go to its admin login.</p>
     <form id="form">
       <input id="slug" required placeholder="e.g. acme-saas" aria-label="Board name" autofocus />
       <button type="submit">Continue</button>
@@ -966,7 +1044,136 @@ function loginLookupPage(errorMsg) {
 </html>`;
 }
 
-function signupPage(errorMsg) {
+function accountPage(account, boards, claimSlug, errorMsg) {
+  const who = account.name ? `${escapeHtml(account.name)} <span>${escapeHtml(account.email)}</span>` : escapeHtml(account.email);
+  const roleLabel = { owner: "Owner", admin: "Admin", member: "Invited" };
+  const rows = boards
+    .map((b) => {
+      const slug = encodeURIComponent(b.slug);
+      return `<div class="board-row" data-testid="account-board-${escapeHtml(b.slug)}">
+        <div class="board-main">
+          <div class="board-name">${escapeHtml(b.name || b.slug)}</div>
+          <div class="board-meta">/b/${escapeHtml(b.slug)} &middot; ${roleLabel[b.role] || "Admin"}</div>
+        </div>
+        <div class="board-links">
+          <a href="/b/${slug}/admin">Triage</a>
+          <a href="/b/${slug}/connect">Connect</a>
+          <a href="/b/${slug}">Board</a>
+        </div>
+      </div>`;
+    })
+    .join("");
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Your boards - RequestHub</title>
+  ${DESIGN_FONT_LINK}
+  <script>${THEME_TOGGLE_SCRIPT}</script>
+  <style>
+    ${DESIGN_TOKENS}
+    body { min-height: 100vh; }
+    .wrap { max-width: 640px; margin: 0 auto; padding: 48px 16px 64px; box-sizing: border-box; }
+    .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 28px; }
+    .logo-mark { width: 32px; height: 32px; border-radius: 9px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; text-decoration: none; }
+    .who { font-size: 13px; color: var(--text); text-align: right; min-width: 0; overflow-wrap: anywhere; }
+    .who span { color: var(--text-muted); display: block; font-size: 12px; }
+    .who a { color: var(--text-muted); font-size: 12px; }
+    h1 { font-size: 22px; margin: 0 0 6px; color: var(--text); }
+    p.lead { color: var(--text-muted); font-size: 13.5px; margin: 0 0 20px; line-height: 1.5; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 20px; margin-bottom: 16px; }
+    .card h2 { font-size: 15px; margin: 0 0 6px; color: var(--text); }
+    .card p { color: var(--text-muted); font-size: 13px; margin: 0 0 14px; line-height: 1.5; }
+    .board-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
+    .board-row:first-child { border-top: none; padding-top: 0; }
+    .board-name { font-weight: 600; color: var(--text); font-size: 14px; }
+    .board-meta { color: var(--text-faint); font-size: 12px; margin-top: 2px; }
+    .board-links { display: flex; gap: 14px; }
+    .board-links a { color: var(--accent); font-size: 13px; font-weight: 600; text-decoration: none; }
+    .board-links a:hover { text-decoration: underline; }
+    .empty { color: var(--text-muted); font-size: 13px; margin: 0; }
+    label { display: block; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--text-faint); margin-bottom: 5px; }
+    input { width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 10px 12px; font-size: 14px; box-sizing: border-box; margin-bottom: 12px; font-family: inherit; }
+    button, a.btn { display: inline-block; text-align: center; background: var(--accent); color: #fff; border: none; padding: 10px 16px; border-radius: var(--radius-btn); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; text-decoration: none; }
+    button:hover, a.btn:hover { background: var(--accent-hover); }
+    button:disabled { background: var(--surface-3); color: var(--text-faint); cursor: default; }
+    .error { color: var(--bad); font-size: 12.5px; margin: 0 0 12px; }
+    .notice { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--text); margin-bottom: 14px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode" style="position:fixed;top:16px;right:16px;"></button>
+  <div class="wrap">
+    <div class="top">
+      <a class="logo-mark" href="/">R</a>
+      <div class="who">${who}<a href="/account/logout" data-testid="account-logout">Sign out</a></div>
+    </div>
+    <h1>Your boards</h1>
+    <p class="lead">Every board your Google account can manage. Open one to triage ideas or connect your tools.</p>
+    ${errorMsg ? `<div class="error" role="alert">${escapeHtml(errorMsg)}</div>` : ""}
+    <div class="card">
+      ${rows || `<p class="empty">No boards on this account yet. Start one, or add a board you already run below.</p>`}
+    </div>
+
+    <div class="card" id="claim">
+      <h2>Add a board you already run</h2>
+      ${
+        claimSlug
+          ? `<div class="notice">Your Google account isn't on <b>${escapeHtml(claimSlug)}</b>'s team yet. Enter that board's admin password once to add it, or ask its admin to invite <b>${escapeHtml(account.email)}</b>.</div>`
+          : `<p>Boards made before Google sign-in use a shared admin password. Enter it once and the board moves onto your account.</p>`
+      }
+      <div class="error" id="claimError" role="alert" hidden></div>
+      <form id="claimForm">
+        <label for="claimSlug">Board name</label>
+        <input id="claimSlug" required placeholder="e.g. acme-saas" value="${escapeHtml(claimSlug || "")}" data-testid="claim-slug" />
+        <label for="claimPassword">Admin password</label>
+        <input id="claimPassword" type="password" required autocomplete="current-password" data-testid="claim-password" />
+        <button type="submit" id="claimBtn" data-testid="claim-submit">Add to my account</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Start a new board</h2>
+      <p>Set up a board for another product in under a minute.</p>
+      <a class="btn" href="/signup" data-testid="account-new-board">Start a board</a>
+    </div>
+  </div>
+  <script>
+    document.getElementById('claimForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var btn = document.getElementById('claimBtn');
+      var err = document.getElementById('claimError');
+      var slug = document.getElementById('claimSlug').value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+      err.hidden = true;
+      btn.disabled = true;
+      btn.textContent = 'Checking...';
+      fetch('/api/account/claim', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ slug: slug, password: document.getElementById('claimPassword').value }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.ok) { window.location.href = '/b/' + encodeURIComponent(d.slug) + '/admin'; return; }
+          err.textContent = d.error || 'Could not add that board';
+          err.hidden = false;
+          btn.disabled = false;
+          btn.textContent = 'Add to my account';
+        })
+        .catch(function () {
+          err.textContent = 'Something went wrong - try again';
+          err.hidden = false;
+          btn.disabled = false;
+          btn.textContent = 'Add to my account';
+        });
+    });
+  </script>
+</body>
+</html>`;
+}
+
+function signupPage(errorMsg, account, googleOn) {
   return `<!doctype html>
 <html>
 <head>
@@ -978,7 +1185,7 @@ function signupPage(errorMsg) {
   <style>
     ${DESIGN_TOKENS}
     body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-    .card { width: 100%; max-width: 400px; padding: 32px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); box-sizing: border-box; }
+    .card { width: 100%; max-width: min(400px, calc(100% - 32px)); padding: 32px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); box-sizing: border-box; }
     .logo-mark { width: 32px; height: 32px; border-radius: 9px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; margin-bottom: 14px; }
     h1 { font-size: 19px; margin: 0 0 6px; color: var(--text); }
     p { color: var(--text-muted); font-size: 13px; margin: 0 0 18px; line-height: 1.5; }
@@ -995,6 +1202,8 @@ function signupPage(errorMsg) {
     .error { color: var(--bad); font-size: 12.5px; margin: -4px 0 12px; }
     .back { display: block; text-align: center; margin-top: 16px; color: var(--text-muted); font-size: 12.5px; text-decoration: none; }
     .back:hover { color: var(--text); }
+    .signed-in { font-size: 12.5px; color: var(--text-muted); margin: 0 0 16px; }
+    ${GOOGLE_BUTTON_CSS}
   </style>
 </head>
 <body>
@@ -1002,15 +1211,30 @@ function signupPage(errorMsg) {
     <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode" style="position:fixed;top:16px;right:16px;"></button>
     <div class="logo-mark">R</div>
     <h1>Start your own feedback board</h1>
-    <p>Enter your company name and an admin password. We'll set up a real board, with your own Slack, Linear, and Notion connections - no credit card.</p>
+    <p>${
+      account
+        ? "Name your board. We'll set it up with your own Slack, Linear, and Notion connections - no credit card."
+        : "Enter your company name and an admin password. We'll set up a real board, with your own Slack, Linear, and Notion connections - no credit card."
+    }</p>
     <div class="error" id="formError" role="alert"${errorMsg ? "" : " hidden"}>${errorMsg ? escapeHtml(errorMsg) : ""}</div>
+    ${
+      account
+        ? `<p class="signed-in">Signed in as <b>${escapeHtml(account.email)}</b> - the board will be on your account.</p>`
+        : googleOn
+          ? `${googleButton("/signup", "Sign up with Google")}<div class="divider">or with a password</div>`
+          : ""
+    }
     <form id="form">
       <label for="name">Company name</label>
       <input id="name" required maxlength="60" placeholder="e.g. Acme SaaS" autofocus />
       <div class="hint" id="hint">Your board will be at requesthub.zohaib-iot.workers.dev/b/<b id="slugPreview">your-slug</b></div>
-      <label for="password">Admin password</label>
+      ${
+        account
+          ? ""
+          : `<label for="password">Admin password</label>
       <input id="password" type="password" required minlength="8" maxlength="200" autocomplete="new-password" placeholder="At least 8 characters" />
-      <div class="hint">You'll use this to triage ideas and connect your tools. You can invite teammates later.</div>
+      <div class="hint">You'll use this to triage ideas and connect your tools. You can invite teammates later.</div>`
+      }
       <button type="submit" id="submitBtn">Create my board</button>
     </form>
     <a class="back" href="/">&larr; Back</a>
@@ -1040,7 +1264,7 @@ function signupPage(errorMsg) {
       fetch('/api/signup', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: nameInput.value.trim(), password: document.getElementById('password').value }),
+        body: JSON.stringify({ name: nameInput.value.trim(), password: (document.getElementById('password') || {}).value || '' }),
       })
         .then(function (r) { return r.json(); })
         .then(function (d) {
@@ -1139,8 +1363,8 @@ function connectPage(customerSlug, endOrgId, token, setupLinks, isOwner) {
     .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
     .brand { font-weight: 700; font-size: 15px; }
-    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 18px; }
-    .nav-right a { color: var(--text-muted); font-size: 13px; text-decoration: none; }
+    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap; justify-content: flex-end; }
+    .nav-right a { color: var(--text-muted); font-size: 13px; text-decoration: none; white-space: nowrap; }
     .nav-right a:hover { color: var(--text); }
     .nav-right a.logout { color: var(--bad); }
     .nav-right a.owner-link { color: var(--accent); font-weight: 600; }
@@ -1184,6 +1408,7 @@ function connectPage(customerSlug, endOrgId, token, setupLinks, isOwner) {
       <a href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
       <a href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
       <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
+      <a href="/account" data-testid="nav-your-boards">Your boards</a>
       <a class="logout" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
     </nav>
   </div>
@@ -1242,8 +1467,8 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
     .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
     .brand { font-weight: 700; font-size: 15px; }
-    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 18px; }
-    .nav-right a { color: var(--text-muted); font-size: 13px; text-decoration: none; }
+    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap; justify-content: flex-end; }
+    .nav-right a { color: var(--text-muted); font-size: 13px; text-decoration: none; white-space: nowrap; }
     .nav-right a:hover { color: var(--text); }
     .nav-right a.logout { color: var(--bad); }
     .nav-right a.owner-link { color: var(--accent); font-weight: 600; }
@@ -1307,6 +1532,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
       <a href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
       <a href="/b/${encodeURIComponent(customerSlug)}/billing">Billing</a>
       <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
+      <a href="/account" data-testid="nav-your-boards">Your boards</a>
       <a class="logout" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
     </nav>
   </div>
@@ -1440,7 +1666,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
 
     <div class="card">
       <h2>Team</h2>
-      <p class="hint">Invite teammates to sign in with their own email instead of sharing the admin password. Anyone invited gets full admin access, same as the shared password.</p>
+      <p class="hint">Invite teammates by email instead of sharing the admin password. They sign in with Google using that address and get full admin access, same as the shared password.</p>
       <div id="teamList"></div>
       <div class="team-invite-row">
         <input type="email" id="inviteEmail" placeholder="teammate@company.com" aria-label="Teammate's email address" />
@@ -3143,8 +3369,8 @@ function billingPage(customerSlug, currentPlan, isOwner) {
     .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
     .brand { font-weight: 700; font-size: 15px; }
     .brand .org { color: var(--text-faint); font-weight: 500; }
-    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 18px; }
-    .nav-right a { color: var(--text-muted); font-size: 13px; text-decoration: none; }
+    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap; justify-content: flex-end; }
+    .nav-right a { color: var(--text-muted); font-size: 13px; text-decoration: none; white-space: nowrap; }
     .nav-right a:hover { color: var(--text); }
     .nav-right a.logout { color: var(--bad); }
     .nav-right a.owner-link { color: var(--accent); font-weight: 600; }
@@ -3193,6 +3419,7 @@ function billingPage(customerSlug, currentPlan, isOwner) {
       <a href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
       <a href="/b/${encodeURIComponent(customerSlug)}/billing">Billing</a>
       <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
+      <a href="/account" data-testid="nav-your-boards">Your boards</a>
       <a class="logout" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
     </nav>
   </div>
@@ -3520,7 +3747,7 @@ function adminPage(customerSlug, isOwner) {
     .brand { font-weight: 700; font-size: 15px; }
     .brand .org { color: var(--text-faint); font-weight: 500; }
     .nav-right { margin-left: auto; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-    .nav-right a { color: var(--text-muted); font-size: 13px; text-decoration: none; }
+    .nav-right a { color: var(--text-muted); font-size: 13px; text-decoration: none; white-space: nowrap; }
     .nav-right a:hover { color: var(--text); }
     .nav-right a.logout { color: var(--bad); }
     .nav-right a.owner-link { color: var(--accent); font-weight: 600; }
@@ -3619,6 +3846,7 @@ function adminPage(customerSlug, isOwner) {
       <a href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
       <a href="/b/${encodeURIComponent(customerSlug)}/billing">Billing</a>
       <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
+      <a href="/account" data-testid="nav-your-boards">Your boards</a>
       <a class="logout" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
     </nav>
   </div>
@@ -4004,6 +4232,7 @@ function analyticsPage(customerSlug, isOwner) {
       <a href="/b/${encodeURIComponent(customerSlug)}/settings">Settings</a>
       <a href="/b/${encodeURIComponent(customerSlug)}/billing">Billing</a>
       <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode"></button>
+      <a href="/account" data-testid="nav-your-boards">Your boards</a>
       <a class="logout" href="/b/${encodeURIComponent(customerSlug)}/logout">Log out</a>
     </nav>
   </div>
@@ -4546,9 +4775,10 @@ function widgetPage(customerSlug, color, theme) {
 </html>`;
 }
 
-function loginPage(customerSlug, mode, errorMsg, next, isOwner) {
+function loginPage(customerSlug, mode, errorMsg, next, isOwner, googleOn, account) {
   if (mode === "locked") return lockedBoardPage(customerSlug);
   const isSetup = mode === "setup";
+  const googleOnly = mode === "google";
   const nextPath = next || `/b/${encodeURIComponent(customerSlug)}/admin`;
   return `<!doctype html>
 <html>
@@ -4581,6 +4811,9 @@ function loginPage(customerSlug, mode, errorMsg, next, isOwner) {
     .btn-secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
     .btn-secondary:hover { background: var(--surface-3); }
     .magic-note { color: var(--good); font-size: 12.5px; text-align: center; margin: 0; }
+    .signed-in { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; color: var(--text); margin: 0 0 14px; line-height: 1.5; }
+    .signed-in a { color: var(--accent); }
+    ${GOOGLE_BUTTON_CSS}
   </style>
 </head>
 <body>
@@ -4590,16 +4823,31 @@ function loginPage(customerSlug, mode, errorMsg, next, isOwner) {
     <p>${
       isSetup
         ? `No admin password is set yet for "${escapeHtml(customerSlug)}". Choose one now - whoever knows it can triage ideas and connect your tools.`
-        : `Enter the admin password for "${escapeHtml(customerSlug)}" to continue.`
+        : googleOnly
+          ? `Sign in with the Google account that has access to "${escapeHtml(customerSlug)}".`
+          : googleOn
+            ? `Sign in to manage "${escapeHtml(customerSlug)}".`
+            : `Enter the admin password for "${escapeHtml(customerSlug)}" to continue.`
     }</p>
     ${errorMsg ? `<div class="error">${escapeHtml(errorMsg)}</div>` : ""}
-    <form id="form">
-      <input id="password" type="password" placeholder="Password" aria-label="Password" required minlength="6" autofocus />
+    ${
+      account
+        ? `<div class="signed-in">You're signed in as <b>${escapeHtml(account.email)}</b>, which isn't on this board's team yet. Ask its admin to invite you${googleOnly ? "" : `, or enter the admin password below to add it to <a href="/account?claim=${encodeURIComponent(customerSlug)}">your account</a>`}.</div>`
+        : ""
+    }
+    ${googleOn && !isSetup ? googleButton(nextPath, account ? "Use a different Google account" : "Continue with Google") : ""}
+    ${googleOn && !isSetup && !googleOnly ? `<div class="divider">or the board password</div>` : ""}
+    ${
+      googleOnly
+        ? ""
+        : `<form id="form">
+      <input id="password" type="password" placeholder="Password" aria-label="Password" required minlength="6" ${googleOn ? "" : "autofocus"} />
       <button type="submit">${isSetup ? "Set password & continue" : "Log in"}</button>
-    </form>
+    </form>`
+    }
 
     ${
-      isSetup
+      isSetup || googleOnly
         ? ""
         : `<div class="divider">or</div>
     <form id="magicForm">
@@ -4609,11 +4857,13 @@ function loginPage(customerSlug, mode, errorMsg, next, isOwner) {
     <p class="magic-note" id="magicNote" style="display:none;">If that email is on this board's team, a sign-in link is on its way - check your inbox.</p>`
     }
 
+    ${googleOnly ? `<a class="back" href="/signup">Want a board for your own product? Start one</a>` : ""}
     <a class="back" href="/b/${encodeURIComponent(customerSlug)}">&larr; Back to board</a>
     ${isOwner ? `<a class="back" href="/owner">&larr; Owner console</a>` : ""}
   </div>
   <script>
-    document.getElementById('form').addEventListener('submit', function (e) {
+    var form = document.getElementById('form');
+    if (form) form.addEventListener('submit', function (e) {
       e.preventDefault();
       var password = document.getElementById('password').value;
       fetch('/api/customers/${encodeURIComponent(customerSlug)}/auth', {
@@ -4963,8 +5213,146 @@ const app = {
       return html(homePage());
     }
 
+    if (request.method === "GET" && url.pathname === "/auth/google") {
+      if (!googleSignInEnabled(env)) {
+        return redirectWith(`/login?error=${encodeURIComponent("Google sign-in isn't switched on yet")}`);
+      }
+      const state = base64UrlEncode(crypto.getRandomValues(new Uint8Array(24)));
+      const next = safeNextPath(url.searchParams.get("next") || "");
+      const google = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+      google.searchParams.set("client_id", GOOGLE_CLIENT_ID);
+      google.searchParams.set("redirect_uri", `${url.origin}/auth/google/callback`);
+      google.searchParams.set("response_type", "code");
+      google.searchParams.set("scope", "openid email profile");
+      google.searchParams.set("state", state);
+      google.searchParams.set("prompt", "select_account");
+      return redirectWith(google.toString(), [
+        sessionCookie(GOOGLE_STATE_COOKIE, encodeURIComponent(JSON.stringify({ state, next })), 600, "/auth"),
+      ]);
+    }
+
+    if (request.method === "GET" && url.pathname === "/auth/google/callback") {
+      const clearState = sessionCookie(GOOGLE_STATE_COOKIE, "", 0, "/auth");
+      const fail = (msg) => redirectWith(`/login?error=${encodeURIComponent(msg)}`, [clearState]);
+      let saved = null;
+      try {
+        saved = JSON.parse(getCookie(request, GOOGLE_STATE_COOKIE) || "null");
+      } catch {}
+      if (url.searchParams.get("error")) return fail("Google sign-in was cancelled");
+      const code = url.searchParams.get("code");
+      if (!saved?.state || !code || url.searchParams.get("state") !== saved.state) {
+        return fail("That sign-in link expired - please try again");
+      }
+      const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          code,
+          client_id: GOOGLE_CLIENT_ID,
+          client_secret: env.GOOGLE_CLIENT_SECRET || "",
+          redirect_uri: `${url.origin}/auth/google/callback`,
+          grant_type: "authorization_code",
+        }),
+      });
+      const tokens = await tokenRes.json().catch(() => ({}));
+      if (!tokenRes.ok || !tokens.id_token) return fail("Google did not confirm the sign-in - please try again");
+      // The ID token came straight from Google's token endpoint over TLS in
+      // exchange for our client secret, so its claims can be read directly.
+      let claims = {};
+      try {
+        claims = JSON.parse(new TextDecoder().decode(base64UrlDecode(tokens.id_token.split(".")[1])));
+      } catch {}
+      const issuerOk = claims.iss === "https://accounts.google.com" || claims.iss === "accounts.google.com";
+      const verified = claims.email_verified === true || claims.email_verified === "true";
+      if (claims.aud !== GOOGLE_CLIENT_ID || !issuerOk || !claims.sub || !claims.email || !(claims.exp * 1000 > Date.now())) {
+        return fail("Google sign-in could not be verified");
+      }
+      if (!verified) return fail("Your Google email address isn't verified yet");
+      let data;
+      try {
+        data = await accountsCall(env, { action: "signin", sub: claims.sub, email: claims.email, name: claims.name || "" });
+      } catch (err) {
+        return fail(err.message);
+      }
+      const account = data.account;
+      const boards = data.boards || [];
+      const accountToken = await signPayload(env, {
+        kind: "account",
+        aid: account.id,
+        email: account.email,
+        name: account.name || "",
+        exp: Date.now() + SESSION_TTL_MS,
+      });
+      const cookies = [
+        clearState,
+        sessionCookie(ACCOUNT_COOKIE, accountToken, Math.floor(SESSION_TTL_MS / 1000)),
+        ...(await boardSessionCookies(env, account.email, boards)),
+      ];
+      const next = safeNextPath(saved.next || "");
+      const wantedBoard = next.match(/^\/b\/([a-z0-9-]+)\//);
+      let dest = next || (boards.length === 1 ? `/b/${encodeURIComponent(boards[0].slug)}/admin` : "/account");
+      if (wantedBoard && !boards.some((b) => b.slug === wantedBoard[1])) dest = `/account?claim=${wantedBoard[1]}`;
+      return redirectWith(dest, cookies);
+    }
+
+    if (request.method === "GET" && url.pathname === "/account") {
+      const account = await currentAccount(request, env);
+      if (!account) return redirectWith("/login");
+      let boards = [];
+      let errorMsg = url.searchParams.get("error") || null;
+      try {
+        boards = (await accountsCall(env, { action: "boards", accountId: account.aid })).boards || [];
+      } catch (err) {
+        errorMsg = err.message;
+      }
+      const claim = (url.searchParams.get("claim") || "").replace(/[^a-z0-9-]/g, "");
+      const res = html(accountPage(account, boards, boards.some((b) => b.slug === claim) ? "" : claim, errorMsg));
+      for (const c of await boardSessionCookies(env, account.email, boards)) res.headers.append("Set-Cookie", c);
+      return res;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/account/claim") {
+      const account = await currentAccount(request, env);
+      if (!account) return json({ ok: false, error: "Sign in first" }, 401);
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ ok: false, error: "invalid JSON body" }, 400);
+      }
+      const slug = String(body.slug || "").trim().toLowerCase();
+      const password = String(body.password || "");
+      if (!/^[a-z0-9-]+$/.test(slug) || !password) return json({ ok: false, error: "Enter the board name and its admin password" }, 400);
+      try {
+        const existing = await callWorkflow(env, GET_CUSTOMER_AUTH_WORKFLOW_ID, { customerSlug: slug });
+        if (!existing?.hash) {
+          return json({ ok: false, error: "That board has no admin password to prove it with - ask its admin to invite your email instead" }, 403);
+        }
+        const { hash } = await hashPassword(password, existing.salt);
+        if (hash !== existing.hash) return json({ ok: false, error: "That isn't the admin password for this board" }, 401);
+        await accountsCall(env, { action: "link", accountId: account.aid, customerSlug: slug, role: "admin" });
+        const res = json({ ok: true, slug });
+        res.headers.append(
+          "Set-Cookie",
+          sessionCookie(sessionCookieName(slug), await createSessionToken(env, slug, account.email), Math.floor(SESSION_TTL_MS / 1000))
+        );
+        return res;
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
+
+    if (request.method === "GET" && url.pathname === "/account/logout") {
+      const names = (request.headers.get("cookie") || "")
+        .split(";")
+        .map((c) => c.trim().split("=")[0])
+        .filter((n) => n === ACCOUNT_COOKIE || n.startsWith("rh_auth_"));
+      return redirectWith("/", names.map((n) => sessionCookie(n, "", 0)));
+    }
+
     if (request.method === "GET" && url.pathname === "/login") {
-      return html(loginLookupPage(url.searchParams.get("error")));
+      if (!url.searchParams.get("error") && (await currentAccount(request, env))) return redirectWith("/account");
+      return html(loginLookupPage(url.searchParams.get("error"), googleSignInEnabled(env)));
     }
 
     if (request.method === "GET" && url.pathname === "/owner/login") {
@@ -5062,7 +5450,7 @@ const app = {
     }
 
     if (request.method === "GET" && url.pathname === "/signup") {
-      return html(signupPage(url.searchParams.get("error")));
+      return html(signupPage(url.searchParams.get("error"), await currentAccount(request, env), googleSignInEnabled(env)));
     }
 
     if (request.method === "GET" && url.pathname === "/signup/done") {
@@ -5088,8 +5476,9 @@ const app = {
       if (slug.length < 3) {
         return json({ ok: false, error: "That name doesn't make a usable URL - try adding more letters" }, 400);
       }
+      const signupAccount = await currentAccount(request, env);
       const signupPassword = (body.password || "").toString();
-      if (signupPassword.length < 8) {
+      if (signupAccount ? signupPassword && signupPassword.length < 8 : signupPassword.length < 8) {
         return json({ ok: false, error: "Choose an admin password of at least 8 characters" }, 400);
       }
       const existingOrgId = await getTenantOrgId(env, slug);
@@ -5098,8 +5487,13 @@ const app = {
       }
       try {
         await provisionFastnTenant(env, slug, name);
-        const { hash, salt } = await hashPassword(signupPassword);
-        await callWorkflow(env, SET_CUSTOMER_PASSWORD_WORKFLOW_ID, { customerSlug: slug, hash, salt });
+        if (signupPassword) {
+          const { hash, salt } = await hashPassword(signupPassword);
+          await callWorkflow(env, SET_CUSTOMER_PASSWORD_WORKFLOW_ID, { customerSlug: slug, hash, salt });
+        }
+        if (signupAccount) {
+          await accountsCall(env, { action: "link", accountId: signupAccount.aid, customerSlug: slug, role: "owner" });
+        }
         const res = json({ ok: true, slug });
         res.headers.append(
           "Set-Cookie",
@@ -5146,11 +5540,20 @@ const app = {
       const errorMsg = url.searchParams.get("error");
       const isOwner = await requireAuth(request, env, OWNER_SLUG);
       try {
+        const account = await currentAccount(request, env);
+        if (account) {
+          // A teammate invited after they last signed in has no board cookie yet.
+          const boards = (await accountsCall(env, { action: "boards", accountId: account.aid }).catch(() => ({}))).boards || [];
+          if (boards.some((b) => b.slug === customerSlug)) {
+            return redirectWith(`/b/${encodeURIComponent(customerSlug)}/admin`, await boardSessionCookies(env, account.email, [{ slug: customerSlug }]));
+          }
+        }
+        const googleOn = googleSignInEnabled(env);
         const auth = await callWorkflow(env, GET_CUSTOMER_AUTH_WORKFLOW_ID, { customerSlug });
-        const mode = auth?.hash ? "login" : isOwner ? "setup" : "locked";
-        return html(loginPage(customerSlug, mode, errorMsg, null, isOwner));
+        const mode = auth?.hash ? "login" : isOwner ? "setup" : googleOn ? "google" : "locked";
+        return html(loginPage(customerSlug, mode, errorMsg, null, isOwner, googleOn, account));
       } catch (err) {
-        return html(loginPage(customerSlug, "login", "Could not check auth status - try again.", null, isOwner));
+        return html(loginPage(customerSlug, "login", "Could not check auth status - try again.", null, isOwner, false, null));
       }
     }
 
@@ -5159,6 +5562,8 @@ const app = {
       const customerSlug = logoutMatch[1];
       const res = new Response(null, { status: 302, headers: { Location: `/b/${encodeURIComponent(customerSlug)}` } });
       res.headers.append("Set-Cookie", `${sessionCookieName(customerSlug)}=; Path=/; Max-Age=0`);
+      // Otherwise the Google session would sign them straight back in.
+      res.headers.append("Set-Cookie", sessionCookie(ACCOUNT_COOKIE, "", 0));
       return res;
     }
 
