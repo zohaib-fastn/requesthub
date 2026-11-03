@@ -21,6 +21,7 @@ const ADD_USER_WORKFLOW_ID = "wf_598118e16bcb";
 const REMOVE_USER_WORKFLOW_ID = "wf_dccff8e93fa9";
 const REGISTER_LINEAR_WEBHOOK_WORKFLOW_ID = "wf_55825cf21bfc";
 const UNREGISTER_LINEAR_WEBHOOK_WORKFLOW_ID = "wf_9633b10b01af";
+const LINEAR_RELAY_WORKFLOW_ID = "wf_8599e74300aa";
 const FIND_IDEA_BY_LINEAR_ISSUE_WORKFLOW_ID = "wf_bc7a52df867b";
 const GET_LINEAR_WEBHOOK_SECRET_WORKFLOW_ID = "wf_c376837b8860";
 const CREATE_WEBHOOK_WORKFLOW_ID = "wf_e13c16fac3dc";
@@ -206,6 +207,47 @@ function json(obj, status = 200, extraHeaders = {}) {
     status,
     headers: { "content-type": "application/json; charset=utf-8", ...extraHeaders },
   });
+}
+
+async function fastnApi(env, method, path, body) {
+  const res = await fetch(`${FASTN_BASE}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${env.FASTN_API_KEY}`,
+      "Content-Type": "application/json",
+      "X-fastn-Test-Mode": "true",
+      "x-fastn-env": "test",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const parsed = await res.json().catch(() => ({}));
+  return { status: res.status, data: parsed?.data ?? parsed };
+}
+
+// Linear's webhooks for a tenant land on a Fastn webhook trigger, which runs
+// the relay workflow (event log, retries, dead-letter queue and replay come
+// from Fastn) and hands the event to /api/webhooks/linear/:slug, which still
+// verifies Linear's signature. Query strings don't survive the trigger, so
+// each tenant gets its own trigger and the route header names the board.
+function linearRelayTriggerId(customerSlug) {
+  return `rh-linear-${customerSlug}`;
+}
+
+async function ensureLinearRelayTrigger(env, customerSlug) {
+  const id = linearRelayTriggerId(customerSlug);
+  const spec = {
+    name: `RequestHub - Linear events for ${customerSlug}`,
+    authMethod: "NONE",
+    routes: [{ routeId: LINEAR_RELAY_WORKFLOW_ID, routeType: "API", headers: { "x-rh-tenant": customerSlug } }],
+    dlqConfiguration: { maxRetries: 5, backoffStrategy: "exponential" },
+  };
+  let r = await fastnApi(env, "POST", "/api/v1/webhooks", { id, ...spec });
+  if (r.status === 409) r = await fastnApi(env, "PUT", `/api/v1/webhooks/${id}`, spec);
+  const triggerUrl = r.data?.triggerUrl || r.data?.webhook?.triggerUrl;
+  if (r.status >= 300 || !triggerUrl) {
+    throw new Error(`could not provision the Fastn trigger for ${customerSlug} (HTTP ${r.status})`);
+  }
+  return triggerUrl;
 }
 
 async function callWorkflow(env, workflowId, input, endOrgId) {
@@ -1210,7 +1252,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
       ${settings.linearTeamId
         ? `<p class="hint">Status stays in sync both ways - change it in Linear and it updates the idea here, change it here (Planned, In Progress, Shipped) and it moves the matching Linear ticket, including moving it backward.</p>
       <p class="hint" id="linearSyncStatus">${settings.linearWebhookEnabled
-        ? `<strong style="color: var(--good);">On</strong> - watching your "${escapeHtml(settings.linearTeamId)}" team for status changes.`
+        ? `<strong style="color: var(--good);">On</strong> - watching your "${escapeHtml(settings.linearTeamId)}" team for status changes. Linear's events arrive through a Fastn webhook trigger, so a failed delivery is retried and can be replayed.`
         : `<strong style="color: var(--text-faint);">Off</strong>.`}</p>
       <button type="button" class="btn-submit" id="linearSyncToggleBtn" style="${settings.linearWebhookEnabled ? "background: var(--bad);" : ""}">${settings.linearWebhookEnabled ? "Turn off" : "Turn on"}</button>`
         : `<p class="hint">Connect a Linear team above and save, then come back here to turn on real-time sync.</p>`}
@@ -4682,6 +4724,10 @@ function ownerDashboardPage(customers, errorMsg) {
 // keys before responding, so the person who just voted/commented always reads
 // their own write; other colos may lag by up to BOARD_CACHE_FRESH_MS.
 const BOARD_CACHE_FRESH_MS = 15000;
+// Past this age a cached list is never served, even once: a write that came in
+// through another colo (a Linear webhook relayed by Fastn, a partner API call)
+// only purged that colo, so a quiet board must not show a minutes-old list.
+const BOARD_CACHE_STALE_MAX_MS = 60000;
 const BOARD_CACHE_MAX_AGE_S = 600;
 const tenantOfWrite = new WeakMap();
 
@@ -4721,8 +4767,9 @@ async function refreshBoardCache(cache, key, request, env, ctx) {
 async function cachedBoardRead(key, request, env, ctx) {
   const cache = caches.default;
   const hit = await cache.match(key);
-  if (hit) {
-    const age = Date.now() - Number(hit.headers.get("x-rh-cached-at") || 0);
+  const hitAge = hit ? Date.now() - Number(hit.headers.get("x-rh-cached-at") || 0) : Infinity;
+  if (hit && hitAge <= BOARD_CACHE_STALE_MAX_MS) {
+    const age = hitAge;
     if (age > BOARD_CACHE_FRESH_MS) ctx.waitUntil(refreshBoardCache(cache, key, request, env, ctx).catch(() => {}));
     const out = new Response(hit.body, hit);
     out.headers.set("cache-control", "no-store");
@@ -5410,6 +5457,9 @@ const app = {
       if (body.action === "disable") {
         try {
           const data = await callWorkflow(env, UNREGISTER_LINEAR_WEBHOOK_WORKFLOW_ID, { customerSlug }, endOrgId);
+          if (data?.ok) {
+            await fastnApi(env, "DELETE", `/api/v1/webhooks/${linearRelayTriggerId(customerSlug)}`).catch(() => {});
+          }
           return json(data);
         } catch (err) {
           return json({ ok: false, error: err.message }, 502);
@@ -5424,19 +5474,20 @@ const app = {
           return json({ ok: false, error: "connect a Linear team first" }, 400);
         }
         const secret = toHex(crypto.getRandomValues(new Uint8Array(32)));
+        let webhookUrl = `${url.origin}/api/webhooks/linear/${encodeURIComponent(customerSlug)}`;
+        let deliveredVia = "direct";
+        try {
+          webhookUrl = await ensureLinearRelayTrigger(env, customerSlug);
+          deliveredVia = "fastn";
+        } catch {}
         try {
           const data = await callWorkflow(
             env,
             REGISTER_LINEAR_WEBHOOK_WORKFLOW_ID,
-            {
-              customerSlug,
-              teamId: settings.linearTeamId,
-              webhookUrl: `${url.origin}/api/webhooks/linear/${encodeURIComponent(customerSlug)}`,
-              secret,
-            },
+            { customerSlug, teamId: settings.linearTeamId, webhookUrl, secret },
             endOrgId
           );
-          return json(data);
+          return json({ ...data, deliveredVia });
         } catch (err) {
           return json({ ok: false, error: err.message }, 502);
         }
