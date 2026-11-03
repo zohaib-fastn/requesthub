@@ -1214,34 +1214,28 @@ function signupPage(errorMsg, account, googleOn) {
     <p>${
       account
         ? "Name your board. We'll set it up with your own Slack, Linear, and Notion connections - no credit card."
-        : "Enter your company name and an admin password. We'll set up a real board, with your own Slack, Linear, and Notion connections - no credit card."
+        : "Sign in with Google to start. Your board is set up with your own Slack, Linear, and Notion connections, and stays on your account - no credit card."
     }</p>
     <div class="error" id="formError" role="alert"${errorMsg ? "" : " hidden"}>${errorMsg ? escapeHtml(errorMsg) : ""}</div>
     ${
       account
-        ? `<p class="signed-in">Signed in as <b>${escapeHtml(account.email)}</b> - the board will be on your account.</p>`
-        : googleOn
-          ? `${googleButton("/signup", "Sign up with Google")}<div class="divider">or with a password</div>`
-          : ""
-    }
+        ? `<p class="signed-in">Signed in as <b>${escapeHtml(account.email)}</b>. Not you? <a href="/account/logout">Sign out</a></p>
     <form id="form">
       <label for="name">Company name</label>
       <input id="name" required maxlength="60" placeholder="e.g. Acme SaaS" autofocus />
       <div class="hint" id="hint">Your board will be at requesthub.zohaib-iot.workers.dev/b/<b id="slugPreview">your-slug</b></div>
-      ${
-        account
-          ? ""
-          : `<label for="password">Admin password</label>
-      <input id="password" type="password" required minlength="8" maxlength="200" autocomplete="new-password" placeholder="At least 8 characters" />
-      <div class="hint">You'll use this to triage ideas and connect your tools. You can invite teammates later.</div>`
-      }
       <button type="submit" id="submitBtn">Create my board</button>
-    </form>
-    <a class="back" href="/">&larr; Back</a>
+    </form>`
+        : googleOn
+          ? googleButton("/signup", "Sign up with Google")
+          : `<p class="signed-in">Sign-up is paused for a moment - please try again shortly.</p>`
+    }
+    <a class="back" href="${account ? "/account" : "/"}">&larr; Back</a>
   </div>
   <script>
     var nameInput = document.getElementById('name');
     var slugPreview = document.getElementById('slugPreview');
+    if (nameInput) {
     function slugify(s) {
       return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
     }
@@ -1264,7 +1258,7 @@ function signupPage(errorMsg, account, googleOn) {
       fetch('/api/signup', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: nameInput.value.trim(), password: (document.getElementById('password') || {}).value || '' }),
+        body: JSON.stringify({ name: nameInput.value.trim() }),
       })
         .then(function (r) { return r.json(); })
         .then(function (d) {
@@ -1273,6 +1267,7 @@ function signupPage(errorMsg, account, googleOn) {
         })
         .catch(function () { fail('Something went wrong - try again'); });
     });
+    }
   </script>
 </body>
 </html>`;
@@ -1666,7 +1661,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
 
     <div class="card">
       <h2>Team</h2>
-      <p class="hint">Invite teammates by email instead of sharing the admin password. They sign in with Google using that address and get full admin access, same as the shared password.</p>
+      <p class="hint">Invite teammates by email. They sign in with Google using that address and get full admin access to this board.</p>
       <div id="teamList"></div>
       <div class="team-invite-row">
         <input type="email" id="inviteEmail" placeholder="teammate@company.com" aria-label="Teammate's email address" />
@@ -1868,7 +1863,7 @@ function settingsPage(customerSlug, settings, saved, isOwner, baseUrl) {
           var users = (d && d.ok && d.users) || [];
           var list = document.getElementById('teamList');
           if (!users.length) {
-            list.innerHTML = '<p class="team-empty">No teammates invited yet - everyone uses the shared admin password above.</p>';
+            list.innerHTML = '<p class="team-empty">No teammates invited yet.</p>';
             return;
           }
           list.innerHTML = users.map(function (u) {
@@ -5477,9 +5472,8 @@ const app = {
         return json({ ok: false, error: "That name doesn't make a usable URL - try adding more letters" }, 400);
       }
       const signupAccount = await currentAccount(request, env);
-      const signupPassword = (body.password || "").toString();
-      if (signupAccount ? signupPassword && signupPassword.length < 8 : signupPassword.length < 8) {
-        return json({ ok: false, error: "Choose an admin password of at least 8 characters" }, 400);
+      if (!signupAccount) {
+        return json({ ok: false, error: "Sign in with Google to start a board" }, 401);
       }
       const existingOrgId = await getTenantOrgId(env, slug);
       if (existingOrgId) {
@@ -5487,17 +5481,11 @@ const app = {
       }
       try {
         await provisionFastnTenant(env, slug, name);
-        if (signupPassword) {
-          const { hash, salt } = await hashPassword(signupPassword);
-          await callWorkflow(env, SET_CUSTOMER_PASSWORD_WORKFLOW_ID, { customerSlug: slug, hash, salt });
-        }
-        if (signupAccount) {
-          await accountsCall(env, { action: "link", accountId: signupAccount.aid, customerSlug: slug, role: "owner" });
-        }
+        await accountsCall(env, { action: "link", accountId: signupAccount.aid, customerSlug: slug, role: "owner" });
         const res = json({ ok: true, slug });
         res.headers.append(
           "Set-Cookie",
-          `${sessionCookieName(slug)}=${await createSessionToken(env, slug)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`
+          `${sessionCookieName(slug)}=${await createSessionToken(env, slug, signupAccount.email)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`
         );
         return res;
       } catch (err) {

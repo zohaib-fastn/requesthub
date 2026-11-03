@@ -351,14 +351,19 @@ async function run() {
     assert(!text.includes("Set your admin password"), "still offers to set the admin password");
     assert(text.includes("/signup"), "no path to start a board");
   });
-  await check("signup requires an admin password", async () => {
+  await check("starting a board requires Google sign-in", async () => {
     const r = await fetch(BASE_URL + "/api/signup", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "smoke no password " + Date.now() }),
+      body: JSON.stringify({ name: "smoke signed out " + Date.now(), password: "a-long-enough-password" }),
     });
     const body = await r.json();
-    assert(r.status === 400 && body.ok === false, "expected 400, got " + r.status);
+    assert(r.status === 401 && body.ok === false, "expected 401, got " + r.status);
+  });
+  await check("the signup page offers only Google when signed out", async () => {
+    const text = await (await fetch(BASE_URL + "/signup")).text();
+    assert(text.includes('href="/auth/google?next=%2Fsignup"'), "no Google sign-up button");
+    assert(!text.includes('id="password"'), "still shows a password field");
   });
 
   console.log("\nAdmin routes correctly require auth (expect 401/302, no session sent):");
