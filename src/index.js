@@ -791,6 +791,8 @@ async function replayBoardDelivery(env, customerSlug, kind, id) {
 // the one-line embed snippet, nothing else.
 function exampleAppPage(customerSlug, origin) {
   const name = customerSlug.split("-").map((w) => (w === "saas" ? "" : w.charAt(0).toUpperCase() + w.slice(1))).filter(Boolean).join(" ") || customerSlug;
+  // "acme-saas" reads as "Acme Analytics"; a board already named for analytics keeps its name.
+  const product = /analytics$/i.test(name) ? name : `${name} Analytics`;
   const snippet = `<script src="${origin}/embed.js" data-customer="${customerSlug}" data-color="#0f766e"></script>`;
   const bars = [42, 55, 48, 61, 70, 66, 78, 74, 83, 91, 88, 96];
   return `<!doctype html>
@@ -799,7 +801,7 @@ function exampleAppPage(customerSlug, origin) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex" />
-  <title>${escapeHtml(name)} Analytics</title>
+  <title>${escapeHtml(product)}</title>
   <style>
     :root { --ink: #0f172a; --muted: #64748b; --line: #e2e8f0; --bg: #f8fafc; --brand: #0f766e; }
     * { box-sizing: border-box; }
@@ -829,7 +831,7 @@ function exampleAppPage(customerSlug, origin) {
 </head>
 <body>
   <header>
-    <div class="logo">${escapeHtml(name.charAt(0))}</div><b>${escapeHtml(name)} Analytics</b>
+    <div class="logo">${escapeHtml(name.charAt(0))}</div><b>${escapeHtml(product)}</b>
     <nav><span>Dashboards</span><span>Reports</span><span>Alerts</span><span>Settings</span></nav>
   </header>
   <main>
